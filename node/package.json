@@ -8,10 +8,17 @@
     "validate": "./src/cli.js"
   },
   "scripts": {
+    "prepare": "node scripts/setup-hooks.js",
     "build:wasm": "cd .. && wasm-pack build --target nodejs --out-dir node/pkg",
+    "lint": "eslint .",
+    "format:check": "prettier --check .",
+    "format": "prettier --write .",
     "test": "vitest run"
   },
   "devDependencies": {
+    "eslint": "^10.8.1",
+    "globals": "^17.11.0",
+    "prettier": "^3.9.6",
     "vitest": "^4.1.11"
   }
 }

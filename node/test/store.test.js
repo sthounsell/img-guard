@@ -27,37 +27,75 @@ describe("openStore", () => {
     fs.writeFileSync(
       storePath,
       JSON.stringify([
-        { path: "a.png", md5: "md5-a", phash: "12345678901234567890", recordedAt: "2026-01-01T00:00:00.000Z" },
+        {
+          path: "a.png",
+          md5: "md5-a",
+          phash: "12345678901234567890",
+          recordedAt: "2026-01-01T00:00:00.000Z",
+        },
       ]),
     );
 
     const store = openStore(storePath);
 
     expect(store.getEntries()).toEqual([
-      { path: "a.png", md5: "md5-a", phash: 12345678901234567890n, recordedAt: "2026-01-01T00:00:00.000Z" },
+      {
+        path: "a.png",
+        md5: "md5-a",
+        phash: 12345678901234567890n,
+        recordedAt: "2026-01-01T00:00:00.000Z",
+      },
     ]);
   });
 
   it("appends a new Entry and persists it to the JSON file", () => {
     const store = openStore(storePath);
 
-    store.addEntry({ path: "b.png", md5: "md5-b", phash: 42n, recordedAt: "2026-01-02T00:00:00.000Z" });
+    store.addEntry({
+      path: "b.png",
+      md5: "md5-b",
+      phash: 42n,
+      recordedAt: "2026-01-02T00:00:00.000Z",
+    });
 
     expect(store.getEntries()).toEqual([
-      { path: "b.png", md5: "md5-b", phash: 42n, recordedAt: "2026-01-02T00:00:00.000Z" },
+      {
+        path: "b.png",
+        md5: "md5-b",
+        phash: 42n,
+        recordedAt: "2026-01-02T00:00:00.000Z",
+      },
     ]);
     const onDisk = JSON.parse(fs.readFileSync(storePath, "utf8"));
     expect(onDisk).toEqual([
-      { path: "b.png", md5: "md5-b", phash: "42", recordedAt: "2026-01-02T00:00:00.000Z" },
+      {
+        path: "b.png",
+        md5: "md5-b",
+        phash: "42",
+        recordedAt: "2026-01-02T00:00:00.000Z",
+      },
     ]);
   });
 
   it("appends to existing Entries rather than overwriting them", () => {
     const store = openStore(storePath);
-    store.addEntry({ path: "first.png", md5: "md5-1", phash: 1n, recordedAt: "2026-01-01T00:00:00.000Z" });
-    store.addEntry({ path: "second.png", md5: "md5-2", phash: 2n, recordedAt: "2026-01-02T00:00:00.000Z" });
+    store.addEntry({
+      path: "first.png",
+      md5: "md5-1",
+      phash: 1n,
+      recordedAt: "2026-01-01T00:00:00.000Z",
+    });
+    store.addEntry({
+      path: "second.png",
+      md5: "md5-2",
+      phash: 2n,
+      recordedAt: "2026-01-02T00:00:00.000Z",
+    });
 
-    expect(store.getEntries().map((entry) => entry.path)).toEqual(["first.png", "second.png"]);
+    expect(store.getEntries().map((entry) => entry.path)).toEqual([
+      "first.png",
+      "second.png",
+    ]);
   });
 
   it("stamps recordedAt itself when the caller doesn't supply one", () => {

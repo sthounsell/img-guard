@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Mirrors the fmt/lint/test checks .github/workflows/ci.yml runs in CI (#6),
+# so a bad commit fails locally instead of on push. Installed automatically
+# by `npm install` in node/ (see node/scripts/setup-hooks.js); to install by
+# hand, run: git config core.hooksPath .githooks
+
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+
+echo "==> cargo fmt --check"
+cargo fmt --check
+
+echo "==> cargo clippy"
+cargo clippy --all-targets -- -D warnings
+
+echo "==> cargo test"
+cargo test
+
+echo "==> node: build wasm"
+(cd node && npm run build:wasm)
+
+echo "==> node: eslint"
+(cd node && npm run lint)
+
+echo "==> node: prettier --check"
+(cd node && npm run format:check)
+
+echo "==> node: vitest"
+(cd node && npm test)

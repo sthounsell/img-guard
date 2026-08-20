@@ -17,11 +17,17 @@ function openStore(filePath) {
       return [];
     }
     const records = JSON.parse(fs.readFileSync(filePath, "utf8"));
-    return records.map((record) => ({ ...record, phash: BigInt(record.phash) }));
+    return records.map((record) => ({
+      ...record,
+      phash: BigInt(record.phash),
+    }));
   }
 
   function writeAll(entries) {
-    const records = entries.map((entry) => ({ ...entry, phash: entry.phash.toString() }));
+    const records = entries.map((entry) => ({
+      ...entry,
+      phash: entry.phash.toString(),
+    }));
     fs.writeFileSync(filePath, JSON.stringify(records, null, 2));
   }
 

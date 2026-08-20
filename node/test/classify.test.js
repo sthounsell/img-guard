@@ -24,7 +24,11 @@ describe("classify", () => {
       hammingDistance,
     );
 
-    expect(result).toEqual({ type: "Exact", distance: 0, matchedEntry: matching });
+    expect(result).toEqual({
+      type: "Exact",
+      distance: 0,
+      matchedEntry: matching,
+    });
     expect(hammingDistance).not.toHaveBeenCalled();
   });
 
@@ -38,7 +42,11 @@ describe("classify", () => {
       (a, b) => Math.abs(a - b),
     );
 
-    expect(result).toEqual({ type: "Similar", distance: 5, matchedEntry: close });
+    expect(result).toEqual({
+      type: "Similar",
+      distance: 5,
+      matchedEntry: close,
+    });
   });
 
   it("returns the first qualifying entry, not the closest, when scanning for Similar", () => {
