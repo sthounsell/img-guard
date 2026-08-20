@@ -1,0 +1,9 @@
+[package]
+name = "img_guard_core"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+image = "0.25.10"
+image_hasher = "3.1.1"
+md5 = "0.8.1"
