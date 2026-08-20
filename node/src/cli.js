@@ -6,6 +6,7 @@ const path = require("node:path");
 const { md5, phash, hammingDistance } = require("../pkg");
 const { openStore } = require("./store");
 const { classify } = require("./classify");
+const { toValidationResult } = require("./validationResult");
 
 const DEFAULT_THRESHOLD = 10;
 
@@ -56,7 +57,11 @@ function run(argv) {
     hammingDistance,
   );
 
+  // ValidationResult is a consumer-facing convenience view, not a
+  // first-class output — it's printed alongside the full Classification
+  // detail, not in place of it (CONTEXT.md's "ValidationResult").
   console.log(formatClassification(classification));
+  console.log(`ValidationResult: ${toValidationResult(classification)}`);
 
   // Only a New candidate gets persisted — Exact/Similar are already
   // represented by the Entry that matched them.
