@@ -16,19 +16,18 @@ function openStore(filePath) {
     if (!fs.existsSync(filePath)) {
       return [];
     }
-    const records = JSON.parse(fs.readFileSync(filePath, "utf8"));
-    return records.map((record) => ({
-      ...record,
-      phash: BigInt(record.phash),
-    }));
+    // "raw" here, not "record" — CONTEXT.md's Entry definition says to
+    // avoid that term even for the on-disk JSON shape.
+    const raw = JSON.parse(fs.readFileSync(filePath, "utf8"));
+    return raw.map((entry) => ({ ...entry, phash: BigInt(entry.phash) }));
   }
 
   function writeAll(entries) {
-    const records = entries.map((entry) => ({
+    const raw = entries.map((entry) => ({
       ...entry,
       phash: entry.phash.toString(),
     }));
-    fs.writeFileSync(filePath, JSON.stringify(records, null, 2));
+    fs.writeFileSync(filePath, JSON.stringify(raw, null, 2));
   }
 
   return {

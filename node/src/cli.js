@@ -10,9 +10,18 @@ const { toValidationResult } = require("./validationResult");
 
 const DEFAULT_THRESHOLD = 10;
 
-// v1 Store: a single JSON file in the current directory, so it's easy to
-// find and inspect by hand during development (CONTEXT.md's "Store").
-const STORE_PATH = path.join(process.cwd(), "store.json");
+/** Runs `fn` at most once, caching its result for subsequent calls. */
+function memoizeOnce(fn) {
+  let cached;
+  let hasRun = false;
+  return () => {
+    if (!hasRun) {
+      cached = fn();
+      hasRun = true;
+    }
+    return cached;
+  };
+}
 
 function parseArgs(argv) {
   const [imagePath, ...rest] = argv;
@@ -48,8 +57,17 @@ function run(argv) {
   const { imagePath, threshold } = parseArgs(argv);
   const bytes = fs.readFileSync(imagePath);
 
-  const candidate = { md5: md5(bytes), phash: phash(bytes) };
-  const store = openStore(STORE_PATH);
+  // getPhash is a thunk, not a value: on an Exact match classify() never
+  // calls it, so the WASM phash computation is skipped entirely rather
+  // than run and then ignored (CONTEXT.md's Exact: "without actually
+  // computing phash"). Memoized so persisting a New candidate below reuses
+  // the same value instead of hashing the image twice.
+  const getPhash = memoizeOnce(() => phash(bytes));
+  const candidate = { md5: md5(bytes), getPhash };
+
+  // v1 Store: a single JSON file in the current directory, so it's easy to
+  // find and inspect by hand during development (CONTEXT.md's "Store").
+  const store = openStore(path.join(process.cwd(), "store.json"));
   const classification = classify(
     candidate,
     store.getEntries(),
@@ -66,11 +84,7 @@ function run(argv) {
   // Only a New candidate gets persisted — Exact/Similar are already
   // represented by the Entry that matched them.
   if (classification.type === "New") {
-    store.addEntry({
-      path: imagePath,
-      md5: candidate.md5,
-      phash: candidate.phash,
-    });
+    store.addEntry({ path: imagePath, md5: candidate.md5, phash: getPhash() });
   }
 }
 

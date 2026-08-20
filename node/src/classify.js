@@ -10,7 +10,14 @@
  * the WASM boundary (issue #3). The `validate` CLI (issue #7) wires in the
  * real WASM-exposed `hammingDistance`.
  *
- * @param {{ md5: string, phash: * }} candidate
+ * `candidate.getPhash` is a thunk, not a value: an Exact match is decided
+ * from MD5 alone, so the candidate's phash — WASM work the caller would
+ * otherwise have paid for up front — is only computed if the scan for
+ * Similar/New actually needs it (CONTEXT.md's Exact: "distance of 0
+ * without actually computing phash, since MD5 identity already guarantees
+ * it").
+ *
+ * @param {{ md5: string, getPhash: () => * }} candidate
  * @param {Array<{ path: string, md5: string, phash: *, recordedAt: string }>} storeEntries
  * @param {number} threshold - inclusive Hamming-distance cutoff for Similar
  * @param {(a: *, b: *) => number} hammingDistance
@@ -18,15 +25,17 @@
  */
 function classify(candidate, storeEntries, threshold, hammingDistance) {
   // MD5 identity already guarantees the images are byte-identical, so this
-  // short-circuits before any Hamming-distance comparison runs at all.
+  // short-circuits before any Hamming-distance comparison — or the phash
+  // computation feeding it — runs at all.
   const exactMatch = storeEntries.find((entry) => entry.md5 === candidate.md5);
   if (exactMatch) {
     return { type: "Exact", distance: 0, matchedEntry: exactMatch };
   }
 
+  const candidatePhash = candidate.getPhash();
   let minDistance = null;
   for (const storeEntry of storeEntries) {
-    const distance = hammingDistance(candidate.phash, storeEntry.phash);
+    const distance = hammingDistance(candidatePhash, storeEntry.phash);
     if (minDistance === null || distance < minDistance) {
       minDistance = distance;
     }
