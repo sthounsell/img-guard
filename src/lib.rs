@@ -35,6 +35,28 @@ pub fn hamming_distance(a: u64, b: u64) -> u32 {
     (a ^ b).count_ones()
 }
 
+/// Thin WASM boundary (ADR 0002) — `wasm-bindgen` exports of the three pure
+/// functions above, unchanged in behaviour, for `wasm-pack --target nodejs`
+/// to compile to a `require()`-able Node package. No logic lives here.
+mod wasm {
+    use wasm_bindgen::prelude::*;
+
+    #[wasm_bindgen(js_name = md5)]
+    pub fn md5_js(bytes: &[u8]) -> String {
+        super::md5_hex(bytes)
+    }
+
+    #[wasm_bindgen(js_name = phash)]
+    pub fn phash_js(bytes: &[u8]) -> Result<u64, JsValue> {
+        super::phash(bytes).map_err(|err| JsValue::from_str(&err))
+    }
+
+    #[wasm_bindgen(js_name = hammingDistance)]
+    pub fn hamming_distance_js(a: u64, b: u64) -> u32 {
+        super::hamming_distance(a, b)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

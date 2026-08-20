@@ -1,0 +1,17 @@
+{
+  "name": "img-guard-cli",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Node CLI for img-guard: classifies a candidate image against a Store of previously-seen images as New, Exact, or Similar.",
+  "type": "commonjs",
+  "bin": {
+    "validate": "./src/cli.js"
+  },
+  "scripts": {
+    "build:wasm": "cd .. && wasm-pack build --target nodejs --out-dir node/pkg",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "vitest": "^4.1.11"
+  }
+}
