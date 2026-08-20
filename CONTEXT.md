@@ -33,6 +33,8 @@ A Classification outcome: no MD5 match, but an Entry exists whose phash is withi
 **Hamming distance**:
 The count of differing bits between two phashes; the measure used to decide Similar vs. New.
 
+_Limitation_: phash is a low-frequency summary of the image (heavy downscale + DCT), so it's blind to small, localized, high-frequency edits — e.g. a thin drawn line reduced distance to `0` (bit-identical phash) against the original despite the MD5 differing. Detecting that kind of edit would need a different/complementary algorithm, not a threshold change.
+
 **Similarity Threshold**:
 The maximum Hamming distance, inclusive, at which two images are classified as Similar. Exposed as a `--threshold` CLI flag, default `10`.
 
