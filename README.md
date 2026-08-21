@@ -22,8 +22,12 @@ node src/cli.js path/to/image.jpg --threshold 15   # optional; default is 10
 ## Benchmarking
 
 ```bash
-cargo bench                                        # decode vs. hash-compute split, across image sizes
-cd node && npm run benchmark path/to/image.jpg      # cold start vs. steady-state compute breakdown
+cargo bench                       # decode vs. hash-compute split, across image sizes
+cd node && npm run benchmark      # cold start, compute-by-image-size, and lookup-by-Store-size
 ```
 
-The Node benchmark separates Node bootstrap + WASM module instantiation (paid once per CLI invocation) from the actual md5/phash/Store work, so a head-to-head against another solution compares like-for-like compute rather than being skewed by process startup.
+`npm run benchmark` takes optional flags: `--image path/to/real.jpg` (in addition to the synthetic sizes it always runs), `--sizes 64,512,2048,4096`, `--store-sizes 0,100,1000,10000`, `--runs N`. It separates:
+
+- Node bootstrap + WASM module instantiation (paid once per CLI invocation) from the actual md5/phash/Store work, so a head-to-head against another solution compares like-for-like compute rather than being skewed by process startup;
+- compute cost by image size, since phash cost grows with it;
+- lookup cost by how many images are already in the Store, since `classify()`'s Similar/New path scans every Entry — `findExactMatch` should stay flat as the Store grows, `getEntries`/`classify()-as-New` shouldn't.
