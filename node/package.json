@@ -10,6 +10,7 @@
   "scripts": {
     "prepare": "node scripts/setup-hooks.js",
     "build:wasm": "cd .. && wasm-pack build --target nodejs --out-dir node/pkg",
+    "benchmark": "node scripts/benchmark.js",
     "lint": "eslint .",
     "format:check": "prettier --check .",
     "format": "prettier --write .",
