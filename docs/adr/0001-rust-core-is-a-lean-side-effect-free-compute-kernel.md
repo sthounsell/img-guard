@@ -11,4 +11,8 @@ The Rust/WASM module needs a clear boundary of responsibility between what Rust 
 
 ## Consequences
 
-Swapping the Store implementation (e.g. JSON file → SQLite) never touches the Rust core or the WASM interface.
+Swapping the Store implementation (e.g. JSON file → SQLite) never touches the Rust core or the WASM interface — borne out in practice by ADR 0003's JSON-to-SQLite switch, which only touched `node/src/store.js` and `node/src/classify.js`.
+
+## Open Questions (2026-08-21)
+
+This split assumes the WASM boundary from ADR 0002. If that's replaced with napi-rs, this ADR is worth revisiting too: a native addon drops the wasm sandbox that currently enforces "Rust owns no I/O" as a hard constraint rather than a convention, and it may be more performant to move the Store/comparison loop into Rust as well rather than paying Node↔Rust call overhead per operation. Not acted on — depends on ADR 0002's open question resolving first.

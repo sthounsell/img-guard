@@ -1,49 +1,74 @@
 "use strict";
 
-const fs = require("node:fs");
+const Database = require("better-sqlite3");
 
 /**
- * Opens the Store (CONTEXT.md's "Store" concept) backed by a JSON file at
- * `filePath`. Callers only ever deal in Entries — the JSON file and its
- * bigint<->string phash serialization (JSON has no bigint type) are an
- * implementation detail, kept off this interface so a later swap (e.g. to
- * SQLite) never touches callers (ADR 0001).
+ * Opens the Store (CONTEXT.md's "Store" concept) backed by a SQLite
+ * database file at `filePath` (ADR 0003 — superseding v1's JSON file).
+ * Callers only ever deal in Entries — the schema and the u64<->i64 bit
+ * reinterpretation phash needs to fit SQLite's signed INTEGER column are an
+ * implementation detail, kept off this interface (ADR 0001).
  *
  * @param {string} filePath
  */
 function openStore(filePath) {
-  function readAll() {
-    if (!fs.existsSync(filePath)) {
-      return [];
-    }
-    // "raw" here, not "record" — CONTEXT.md's Entry definition says to
-    // avoid that term even for the on-disk JSON shape.
-    const raw = JSON.parse(fs.readFileSync(filePath, "utf8"));
-    return raw.map((entry) => ({ ...entry, phash: BigInt(entry.phash) }));
-  }
+  const db = new Database(filePath);
+  // Plain `number` loses precision above 2^53; phash values routinely
+  // exceed that, so every integer column round-trips as a bigint instead.
+  db.defaultSafeIntegers(true);
 
-  function writeAll(entries) {
-    const raw = entries.map((entry) => ({
-      ...entry,
-      phash: entry.phash.toString(),
-    }));
-    fs.writeFileSync(filePath, JSON.stringify(raw, null, 2));
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS entries (
+      path TEXT NOT NULL,
+      md5 TEXT NOT NULL UNIQUE,
+      phash INTEGER NOT NULL,
+      recorded_at TEXT NOT NULL
+    )
+  `);
+
+  const findExactStmt = db.prepare("SELECT * FROM entries WHERE md5 = ?");
+  const allStmt = db.prepare("SELECT * FROM entries ORDER BY rowid");
+  const insertStmt = db.prepare(
+    "INSERT INTO entries (path, md5, phash, recorded_at) VALUES (?, ?, ?, ?)",
+  );
+
+  /**
+   * A u64 phash doesn't fit SQLite's signed 64-bit INTEGER column as-is —
+   * `asIntN`/`asUintN` reinterpret the same 64 bits across the signed
+   * boundary instead of truncating, so the round trip is lossless.
+   */
+  function rowToEntry(row) {
+    return {
+      path: row.path,
+      md5: row.md5,
+      phash: BigInt.asUintN(64, row.phash),
+      recordedAt: row.recorded_at,
+    };
   }
 
   return {
     /** @returns {Array<{path: string, md5: string, phash: bigint, recordedAt: string}>} */
     getEntries() {
-      return readAll();
+      return allStmt.all().map(rowToEntry);
     },
 
     /**
-     * Appends a new Entry and persists it. Stamps `recordedAt` itself when
-     * the caller doesn't supply one.
+     * O(1) via the `md5` column's unique index — unlike `getEntries()`,
+     * doesn't materialise the rest of the Store to answer an Exact check.
+     * @returns {{path: string, md5: string, phash: bigint, recordedAt: string} | null}
+     */
+    findExactMatch(md5) {
+      const row = findExactStmt.get(md5);
+      return row ? rowToEntry(row) : null;
+    },
+
+    /**
+     * Appends a new Entry as a single `INSERT` — unlike the v1 JSON Store,
+     * doesn't need to read and rewrite every existing Entry to persist one
+     * more. Stamps `recordedAt` itself when the caller doesn't supply one.
      */
     addEntry({ path, md5, phash, recordedAt = new Date().toISOString() }) {
-      const entries = readAll();
-      entries.push({ path, md5, phash, recordedAt });
-      writeAll(entries);
+      insertStmt.run(path, md5, BigInt.asIntN(64, phash), recordedAt);
     },
   };
 }

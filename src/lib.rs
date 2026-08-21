@@ -22,8 +22,11 @@ pub fn phash(bytes: &[u8]) -> Result<u64, String> {
         .preproc_dct()
         .to_hasher();
 
-    let hash_bytes = hasher.hash_image(&image).as_bytes().to_vec();
-    let array: [u8; 8] = hash_bytes
+    // Converting the slice straight to a fixed array avoids the heap
+    // allocation a `.to_vec()` would cost on every call.
+    let array: [u8; 8] = hasher
+        .hash_image(&image)
+        .as_bytes()
         .try_into()
         .map_err(|_| "expected a 64-bit (8-byte) hash".to_string())?;
 

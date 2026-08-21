@@ -11,8 +11,8 @@ A record of one previously-seen image: its path/id, MD5 digest, perceptual hash 
 _Avoid_: Record, hash pair
 
 **Store**:
-The persistence mechanism holding all known Entries. Implemented as a JSON file for v1; the concept itself is storage-agnostic (SQLite was considered as a future option — see ADR 0001).
-_Avoid_: Database, "the JSON file" (when referring to the concept rather than the current implementation)
+The persistence mechanism holding all known Entries. Implemented as SQLite, with an indexed `md5` column (ADR 0003, superseding v1's JSON file); the concept itself remains storage-agnostic.
+_Avoid_: "the database" / "the JSON file" (when referring to the concept rather than the current implementation)
 
 ### Comparison
 

@@ -65,15 +65,12 @@ function run(argv) {
   const getPhash = memoizeOnce(() => phash(bytes));
   const candidate = { md5: md5(bytes), getPhash };
 
-  // v1 Store: a single JSON file in the current directory, so it's easy to
-  // find and inspect by hand during development (CONTEXT.md's "Store").
-  const store = openStore(path.join(process.cwd(), "store.json"));
-  const classification = classify(
-    candidate,
-    store.getEntries(),
-    threshold,
-    hammingDistance,
-  );
+  // SQLite Store (ADR 0003) in the current directory, so it's easy to find
+  // and inspect by hand during development (CONTEXT.md's "Store"). Passed
+  // straight to classify() rather than pre-fetched via getEntries() — an
+  // Exact hit then only ever costs the indexed lookup, not a full scan.
+  const store = openStore(path.join(process.cwd(), "store.db"));
+  const classification = classify(candidate, store, threshold, hammingDistance);
 
   // ValidationResult is a consumer-facing convenience view, not a
   // first-class output — it's printed alongside the full Classification

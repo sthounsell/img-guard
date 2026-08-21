@@ -1,17 +1,28 @@
 "use strict";
 
 // End-to-end test of the validate CLI (issue #7), wiring the real compiled
-// WASM module, classify(), and a real JSON Store together — the same three
-// pieces issue #7 names, run for real rather than mocked. Deliberately
-// narrow: only the acceptance criteria the CLI-level "out of scope" note
-// in CONTEXT.md doesn't cover (argument parsing / output formatting) —
-// specifically, the New -> Exact -> persistence round trip.
+// WASM module, classify(), and a real SQLite Store (ADR 0003) together —
+// the same three pieces issue #7 names, run for real rather than mocked.
+// Deliberately narrow: only the acceptance criteria the CLI-level "out of
+// scope" note in CONTEXT.md doesn't cover (argument parsing / output
+// formatting) — specifically, the New -> Exact -> persistence round trip.
 
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
+const Database = require("better-sqlite3");
 const { run } = require("../src/cli");
 const { gradient, noise } = require("./fixtures");
+
+/** Reads back the Store's entries directly, bypassing the app's own code. */
+function readStoreEntries(dbPath) {
+  const db = new Database(dbPath, { readonly: true });
+  try {
+    return db.prepare("SELECT * FROM entries").all();
+  } finally {
+    db.close();
+  }
+}
 
 let dir;
 let originalCwd;
@@ -41,11 +52,9 @@ describe("validate CLI", () => {
     run(["photo.png"]);
 
     expect(loggedOutput()).toContain("Classification: New");
-    const store = JSON.parse(
-      fs.readFileSync(path.join(dir, "store.json"), "utf8"),
-    );
-    expect(store).toHaveLength(1);
-    expect(store[0].path).toBe("photo.png");
+    const entries = readStoreEntries(path.join(dir, "store.db"));
+    expect(entries).toHaveLength(1);
+    expect(entries[0].path).toBe("photo.png");
   });
 
   it("reports Exact on a second run of the same image, without persisting a duplicate Entry", () => {
@@ -55,10 +64,8 @@ describe("validate CLI", () => {
     run(["photo.png"]);
 
     expect(loggedOutput()).toContain("Classification: Exact");
-    const store = JSON.parse(
-      fs.readFileSync(path.join(dir, "store.json"), "utf8"),
-    );
-    expect(store).toHaveLength(1);
+    const entries = readStoreEntries(path.join(dir, "store.db"));
+    expect(entries).toHaveLength(1);
   });
 
   it("respects --threshold: a distinct image is New by default but Similar at a high threshold", () => {
@@ -68,7 +75,7 @@ describe("validate CLI", () => {
     run(["different.png"]);
     expect(loggedOutput()).toContain("Classification: New");
 
-    fs.rmSync(path.join(dir, "store.json"));
+    fs.rmSync(path.join(dir, "store.db"));
     run(["photo.png"]);
     logSpy.mockClear();
 

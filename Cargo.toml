@@ -11,3 +11,12 @@ image = "0.25.10"
 image_hasher = "3.1.1"
 md5 = "0.8.1"
 wasm-bindgen = "0.2.127"
+
+# Standard wasm-bindgen tuning (rustwasm book's "Optimizing Speed" guidance):
+# single codegen unit and LTO let the optimizer see across the whole crate,
+# `panic = "abort"` drops unwind-table bookkeeping neither wasm-pack target
+# needs. wasm-pack builds with this profile by default (`--release`).
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "abort"

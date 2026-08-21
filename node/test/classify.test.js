@@ -16,15 +16,29 @@ function candidate(md5, phash) {
   return { md5, getPhash: () => phash };
 }
 
+/** A plain in-memory fake conforming to classify()'s store interface. */
+function fakeStore(entries) {
+  return {
+    findExactMatch: (md5) => entries.find((e) => e.md5 === md5) ?? null,
+    getEntries: () => entries,
+  };
+}
+
 describe("classify", () => {
-  it("classifies an MD5 match as Exact with distance 0, without computing the candidate's phash or any Hamming distance", () => {
+  it("classifies an MD5 match as Exact with distance 0, without computing the candidate's phash, any Hamming distance, or the rest of the Store", () => {
     const hammingDistance = vi.fn();
     const getPhash = vi.fn(() => 999);
     const matching = entry({ path: "a.png", md5: "same-md5" });
+    const store = {
+      findExactMatch: (md5) => (md5 === "same-md5" ? matching : null),
+      getEntries: () => {
+        throw new Error("should not be called once an Exact match is found");
+      },
+    };
 
     const result = classify(
       { md5: "same-md5", getPhash },
-      [entry({ path: "b.png", md5: "other" }), matching],
+      store,
       10,
       hammingDistance,
     );
@@ -43,7 +57,7 @@ describe("classify", () => {
 
     const result = classify(
       candidate("candidate-md5", 0),
-      [close],
+      fakeStore([close]),
       10,
       (a, b) => Math.abs(a - b),
     );
@@ -61,7 +75,7 @@ describe("classify", () => {
 
     const result = classify(
       candidate("candidate-md5", 0),
-      [first, closer],
+      fakeStore([first, closer]),
       10,
       (a, b) => Math.abs(a - b),
     );
@@ -75,7 +89,7 @@ describe("classify", () => {
 
     const result = classify(
       candidate("candidate-md5", 0),
-      [atThreshold],
+      fakeStore([atThreshold]),
       10,
       (a, b) => Math.abs(a - b),
     );
@@ -89,7 +103,7 @@ describe("classify", () => {
 
     const result = classify(
       candidate("candidate-md5", 0),
-      [far, nearer],
+      fakeStore([far, nearer]),
       10,
       (a, b) => Math.abs(a - b),
     );
@@ -98,9 +112,14 @@ describe("classify", () => {
   });
 
   it("classifies as New with a null distance when the Store is empty", () => {
-    const result = classify(candidate("candidate-md5", 0), [], 10, () => {
-      throw new Error("should not be called against an empty Store");
-    });
+    const result = classify(
+      candidate("candidate-md5", 0),
+      fakeStore([]),
+      10,
+      () => {
+        throw new Error("should not be called against an empty Store");
+      },
+    );
 
     expect(result).toEqual({ type: "New", distance: null, matchedEntry: null });
   });

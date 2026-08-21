@@ -1,3 +1,5 @@
 /target
 /node/node_modules
 store.json
+store.db
+.DS_Store

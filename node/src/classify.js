@@ -1,14 +1,15 @@
 "use strict";
 
 /**
- * Classifies `candidate` against `storeEntries` as New, Exact, or Similar
- * (see CONTEXT.md's "Comparison" section for the full vocabulary).
+ * Classifies `candidate` against `store` as New, Exact, or Similar (see
+ * CONTEXT.md's "Comparison" section for the full vocabulary).
  *
- * Pure and side-effect-free: no file I/O, and no WASM calls of its own —
- * `hammingDistance` is injected so this seam is testable against plain
- * fixture data, independent of both the Store's persistence (issue #5) and
- * the WASM boundary (issue #3). The `validate` CLI (issue #7) wires in the
- * real WASM-exposed `hammingDistance`.
+ * Pure and side-effect-free itself: no file I/O, and no WASM calls of its
+ * own — `hammingDistance` is injected, and `store` only needs to implement
+ * `findExactMatch`/`getEntries`, so this seam is testable against a plain
+ * fake, independent of both the real Store's persistence (issue #5, ADR
+ * 0003) and the WASM boundary (issue #3). The `validate` CLI (issue #7)
+ * wires in the real Store and the real WASM-exposed `hammingDistance`.
  *
  * `candidate.getPhash` is a thunk, not a value: an Exact match is decided
  * from MD5 alone, so the candidate's phash — WASM work the caller would
@@ -18,23 +19,25 @@
  * it").
  *
  * @param {{ md5: string, getPhash: () => * }} candidate
- * @param {Array<{ path: string, md5: string, phash: *, recordedAt: string }>} storeEntries
+ * @param {{ findExactMatch: (md5: string) => object|null, getEntries: () => Array<{ path: string, md5: string, phash: *, recordedAt: string }> }} store
  * @param {number} threshold - inclusive Hamming-distance cutoff for Similar
  * @param {(a: *, b: *) => number} hammingDistance
  * @returns {{ type: "New"|"Exact"|"Similar", distance: number|null, matchedEntry: object|null }}
  */
-function classify(candidate, storeEntries, threshold, hammingDistance) {
+function classify(candidate, store, threshold, hammingDistance) {
   // MD5 identity already guarantees the images are byte-identical, so this
   // short-circuits before any Hamming-distance comparison — or the phash
-  // computation feeding it — runs at all.
-  const exactMatch = storeEntries.find((entry) => entry.md5 === candidate.md5);
+  // computation feeding it — runs at all. Going through the Store's own
+  // indexed lookup (ADR 0003) also means the common case never has to
+  // materialise every other Entry just to answer this check.
+  const exactMatch = store.findExactMatch(candidate.md5);
   if (exactMatch) {
     return { type: "Exact", distance: 0, matchedEntry: exactMatch };
   }
 
   const candidatePhash = candidate.getPhash();
   let minDistance = null;
-  for (const storeEntry of storeEntries) {
+  for (const storeEntry of store.getEntries()) {
     const distance = hammingDistance(candidatePhash, storeEntry.phash);
     if (minDistance === null || distance < minDistance) {
       minDistance = distance;
