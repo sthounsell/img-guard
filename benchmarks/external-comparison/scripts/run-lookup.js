@@ -2,12 +2,14 @@
 "use strict";
 
 // Lookup-axis comparison harness (issue #17): img-guard's own classify()
-// lookup path (indexed-MD5 + linear-scan-phash) and bktree-fast's native
-// BK-tree (issue #18), timed across the same Store-size sweep
-// `node/scripts/benchmark.js` already uses. Mirrors run-compute.js's
-// CLI-flag pattern and reuses benchmark.js's randomMd5/randomPhash/timeIt
-// helpers directly (rather than re-implementing them) so the two harnesses'
-// seeding/timing approaches can't drift apart.
+// lookup path (indexed-MD5 + linear-scan-phash), a plain in-memory-array
+// linear scan with no query engine at all (issue #20, isolating SQL
+// overhead from algorithmic gap), and bktree-fast's native BK-tree (issue
+// #18) — timed across the same Store-size sweep `node/scripts/benchmark.js`
+// already uses. Mirrors run-compute.js's CLI-flag pattern and reuses
+// benchmark.js's randomMd5/randomPhash/timeIt helpers directly (rather
+// than re-implementing them) so the two harnesses' seeding/timing
+// approaches can't drift apart.
 //
 // Usage: node scripts/run-lookup.js [--store-sizes 0,100,1000,10000]
 //                                    [--runs N] [--threshold N]
@@ -28,6 +30,9 @@ const {
 const {
   createCandidate: createBktreeCandidate,
 } = require("../src/candidates/bktree-lookup");
+const {
+  createCandidate: createPlainArrayCandidate,
+} = require("../src/candidates/plain-array-lookup");
 
 function parseArgs(argv) {
   return {
@@ -42,7 +47,15 @@ function parseArgs(argv) {
 function run(argv) {
   const { storeSizes, runs, threshold } = parseArgs(argv);
 
-  const candidates = [createImgGuardCandidate, createBktreeCandidate];
+  // img-guard first (SQLite-backed), then the plain-array control (same
+  // algorithm, no query engine), then bktree-fast (different algorithm,
+  // no query engine either) — reading down the results table traces the
+  // gap from "SQL overhead" through to "algorithmic gap" (issue #20).
+  const candidates = [
+    createImgGuardCandidate,
+    createPlainArrayCandidate,
+    createBktreeCandidate,
+  ];
 
   const rows = runLookupBenchmark({
     candidates,
