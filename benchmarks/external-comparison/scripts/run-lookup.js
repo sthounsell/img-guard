@@ -2,8 +2,8 @@
 "use strict";
 
 // Lookup-axis comparison harness (issue #17): img-guard's own classify()
-// lookup path (indexed-MD5 + linear-scan-phash), plus bktree-fast once a
-// future ticket adds its adapter, timed across the same Store-size sweep
+// lookup path (indexed-MD5 + linear-scan-phash) and bktree-fast's native
+// BK-tree (issue #18), timed across the same Store-size sweep
 // `node/scripts/benchmark.js` already uses. Mirrors run-compute.js's
 // CLI-flag pattern and reuses benchmark.js's randomMd5/randomPhash/timeIt
 // helpers directly (rather than re-implementing them) so the two harnesses'
@@ -24,6 +24,9 @@ const { writeLookupResultsFile } = require("../src/resultsFile");
 const {
   createCandidate: createImgGuardCandidate,
 } = require("../src/candidates/img-guard-lookup");
+const {
+  createCandidate: createBktreeCandidate,
+} = require("../src/candidates/bktree-lookup");
 
 function parseArgs(argv) {
   const flag = (name, fallback) => {
@@ -47,10 +50,7 @@ function formatRow(label, { mean, min, max }) {
 function run(argv) {
   const { storeSizes, runs, threshold } = parseArgs(argv);
 
-  // One candidate for now (issue #17 scaffolds the harness + img-guard's
-  // own baseline only); a future ticket appends bktree-fast here once its
-  // adapter lands.
-  const candidates = [createImgGuardCandidate];
+  const candidates = [createImgGuardCandidate, createBktreeCandidate];
 
   const rows = runLookupBenchmark({
     candidates,
