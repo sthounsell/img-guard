@@ -43,16 +43,22 @@ function parseArgs(argv) {
   };
 }
 
-/** Runs `fn` `runs` times, returning {mean, min, max} in milliseconds. */
+/**
+ * Runs `fn` `runs` times, returning {mean, min, max} in milliseconds
+ * alongside `value` — `fn`'s own return value from its last call, so a
+ * caller that needs what the timed call produced (not just how long it
+ * took) doesn't have to smuggle it out via an outer-scope variable.
+ */
 function timeIt(fn, runs) {
   const samples = [];
+  let value;
   for (let i = 0; i < runs; i += 1) {
     const start = performance.now();
-    fn();
+    value = fn();
     samples.push(performance.now() - start);
   }
   const mean = samples.reduce((sum, ms) => sum + ms, 0) / samples.length;
-  return { mean, min: Math.min(...samples), max: Math.max(...samples) };
+  return { mean, min: Math.min(...samples), max: Math.max(...samples), value };
 }
 
 function formatRow(label, { mean, min, max }) {

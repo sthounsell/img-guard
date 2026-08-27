@@ -21,6 +21,7 @@ const {
 } = require("../../../node/scripts/benchmark.js");
 const { runLookupBenchmark } = require("../src/lookupRunner");
 const { writeLookupResultsFile } = require("../src/resultsFile");
+const { flag, formatRow } = require("../src/cli");
 const {
   createCandidate: createImgGuardCandidate,
 } = require("../src/candidates/img-guard-lookup");
@@ -29,22 +30,13 @@ const {
 } = require("../src/candidates/bktree-lookup");
 
 function parseArgs(argv) {
-  const flag = (name, fallback) => {
-    const i = argv.indexOf(name);
-    return i === -1 ? fallback : argv[i + 1];
-  };
   return {
-    storeSizes: flag("--store-sizes", "0,100,1000,10000")
+    storeSizes: flag(argv, "--store-sizes", "0,100,1000,10000")
       .split(",")
       .map(Number),
-    runs: Number(flag("--runs", "20")),
-    threshold: Number(flag("--threshold", "10")),
+    runs: Number(flag(argv, "--runs", "20")),
+    threshold: Number(flag(argv, "--threshold", "10")),
   };
-}
-
-function formatRow(label, { mean, min, max }) {
-  const pad = (n) => n.toFixed(3).padStart(9);
-  return `  ${label.padEnd(34)} mean${pad(mean)}ms   min${pad(min)}ms   max${pad(max)}ms`;
 }
 
 function run(argv) {
@@ -74,7 +66,7 @@ function run(argv) {
       lastCandidate = row.candidate;
     }
     console.log(
-      formatRow(`store size ${row.storeSize} (matched=${row.matched})`, row),
+      `${formatRow(`store size ${row.storeSize} (matched=${row.matched})`, row)}   build${row.buildMs.toFixed(3).padStart(9)}ms`,
     );
   }
 

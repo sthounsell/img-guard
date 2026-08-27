@@ -20,14 +20,26 @@
  * database exercises the identical schema/query plan as the file-backed
  * Store `openStore` normally returns, minus disk I/O — which also makes the
  * comparison fairer against `bktree-fast`, an in-memory structure with no
- * disk cost of its own.
+ * disk cost of its own. Seeds via `Store#addEntries` — a single transaction
+ * for the whole store size, rather than one commit per `addEntry` call —
+ * and closes the *previous* store size's database before opening the next,
+ * since `lookupRunner`'s `build()` is called once per store size in the
+ * sweep and nothing else owns that handle; `close()` (called by the runner
+ * once this candidate's whole sweep finishes) closes whatever's left.
  *
- * `query(index, candidateHash, threshold)` calls the real `classify()` with
- * a freshly-random MD5 — never present in the seeded Store, since
- * `randomMd5`'s keyspace makes a collision negligible — so every query
- * exercises the full lookup path (`findExactMatch`'s guaranteed miss, then
- * the phash linear scan), mirroring `benchmark.js`'s "classify() as New
- * (full scan)" case rather than short-circuiting on Exact.
+ * `query(index, probe, threshold)` calls the real `classify()` with the
+ * `probe` the runner hands it — the *same* `{ md5, phash }` pair on every
+ * timed call within a store size (`lookupRunner.js`'s doc comment), never
+ * present in the seeded Store, since `randomMd5`'s keyspace makes a
+ * collision negligible — so every query exercises the full lookup path
+ * (`findExactMatch`'s guaranteed miss, then the phash linear scan),
+ * mirroring `benchmark.js`'s "classify() as New (full scan)" case rather
+ * than short-circuiting on Exact. Earlier revisions generated a fresh
+ * `randomMd5()` *inside* `query()` on every timed call instead of using the
+ * probe the runner already hoisted — real per-call overhead unrelated to
+ * the lookup itself, and asymmetric against `bktree-lookup.js`'s `query()`,
+ * which never had equivalent per-call work. Fixed by using `probe.md5`
+ * here, same as `probe.phash` already was.
  *
  * Not unit-tested (issue #17's Testing Decision, mirroring #13's): this is
  * the real Store and WASM `hammingDistance`, exercised only by actually
@@ -37,27 +49,39 @@ function createCandidate() {
   const { openStore } = require("../../../../node/src/store");
   const { classify } = require("../../../../node/src/classify");
   const { hammingDistance } = require("../../../../node/pkg");
-  const { randomMd5 } = require("../../../../node/scripts/benchmark");
+
+  let currentStore = null;
 
   return {
     name: "img-guard (indexed-MD5 + linear-scan-phash)",
 
     build(entries) {
-      const store = openStore(":memory:");
-      for (const entry of entries) {
-        store.addEntry(entry);
+      if (currentStore) {
+        currentStore.close();
       }
-      return store;
+      currentStore = openStore(":memory:");
+      currentStore.addEntries(entries);
+      return currentStore;
     },
 
-    query(store, candidateHash, threshold) {
-      const result = classify(
-        { md5: randomMd5(), getPhash: () => candidateHash },
+    query(store, probe, threshold) {
+      const classification = classify(
+        { md5: probe.md5, getPhash: () => probe.phash },
         store,
         threshold,
         hammingDistance,
       );
-      return { distance: result.distance, matched: result.type !== "New" };
+      return {
+        distance: classification.distance,
+        matched: classification.type !== "New",
+      };
+    },
+
+    close() {
+      if (currentStore) {
+        currentStore.close();
+        currentStore = null;
+      }
     },
   };
 }

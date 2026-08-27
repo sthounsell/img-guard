@@ -33,8 +33,14 @@
  * phash is a 64-bit hash (`node/scripts/benchmark.js`'s `randomPhash` reads
  * `crypto.randomBytes(8)`) — and inserts every entry's phash as a
  * zero-padded 16-char hex string, `bktree-fast`'s required key shape;
- * mirroring `img-guard-lookup.js`'s in-memory-per-call Store, since the
- * generic lookup-axis adapter has no cleanup hook.
+ * mirroring `img-guard-lookup.js`'s fresh-Index-per-store-size approach.
+ * Seeds via a single `tree.add(...)` call over every entry's key rather
+ * than one `add()` call per entry — `BKTree#add` already accepts (and
+ * flattens) an array of keys, the closest thing to a batch insert its API
+ * offers, even though each key still walks the tree one at a time
+ * internally. No `close()`: a `BKTree` instance is a plain in-memory
+ * object graph with no external resource to release, unlike
+ * `img-guard-lookup.js`'s real SQLite connection.
  *
  * Not unit-tested (issue #17/#18's Testing Decision, mirroring
  * `img-guard-lookup.js`): this is the real native BK-tree, exercised only
@@ -52,18 +58,16 @@ function createCandidate() {
 
     build(entries) {
       const tree = new BKTree(64);
-      for (const entry of entries) {
-        tree.add(toHex(entry.phash));
-      }
+      tree.add(entries.map((entry) => toHex(entry.phash)));
       return tree;
     },
 
-    query(tree, candidateHash, threshold) {
+    query(tree, probe, threshold) {
       // find() prunes the tree to only the nodes within `threshold` and
       // returns them sorted ascending by distance, so [0] is the closest
       // qualifying match — unlike img-guard's candidate, which returns the
       // *first* qualifying entry a linear scan happens to reach.
-      const found = tree.find(toHex(candidateHash), threshold);
+      const found = tree.find(toHex(probe.phash), threshold);
       if (found.length === 0) {
         return { distance: null, matched: false };
       }

@@ -37,7 +37,7 @@
  * @param {number[]} args.sizes - image side lengths to sweep.
  * @param {number} args.runs - steady-state samples per (candidate, size).
  * @param {(size: number) => Buffer} args.bmpBytes
- * @param {(fn: () => unknown, runs: number) => Promise<{mean: number, min: number, max: number}>} args.timeIt
+ * @param {(fn: () => unknown, runs: number) => Promise<{mean: number, min: number, max: number, value: unknown}>} args.timeIt
  * @returns {Promise<Array<{candidate: string, size: number, bits: number, coldStartMs: number, mean: number, min: number, max: number}>>}
  */
 async function runComputeBenchmark({
@@ -56,16 +56,16 @@ async function runComputeBenchmark({
 
     for (const size of sizes) {
       const bytes = bmpBytes(size);
-      let bits = null;
 
-      const stats = await timeIt(async () => {
-        ({ bits } = await candidate.compute(bytes));
-      }, runs);
+      const { value, ...stats } = await timeIt(
+        () => candidate.compute(bytes),
+        runs,
+      );
 
       rows.push({
         candidate: candidate.name,
         size,
-        bits,
+        bits: value.bits,
         coldStartMs,
         ...stats,
       });

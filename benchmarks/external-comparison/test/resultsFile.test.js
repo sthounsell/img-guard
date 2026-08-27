@@ -55,6 +55,7 @@ describe("writeLookupResultsFile", () => {
             candidate: "fake",
             storeSize: 100,
             coldStartMs: 1.2345,
+            buildMs: 0.789,
             distance: 3,
             matched: true,
             mean: 1,

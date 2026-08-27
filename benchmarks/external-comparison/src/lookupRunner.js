@@ -15,23 +15,40 @@
  * compute axis, and `classify()` uses against a fake Store.
  *
  * Candidate factory shape (issue #12's lookup-axis adapter interface):
- * `() => { name, build(entries) -> Index, query(index, candidateHash, threshold) -> { distance, matched } }`.
+ * `() => { name, build(entries) -> Index, query(index, probe, threshold) -> { distance, matched }, close?() }`.
  * The factory call itself is what performs — and what gets timed as — the
- * one-time module load, mirroring the compute axis; `build()` is timed as
- * part of each store-size row's steady-state stats since — unlike
- * compute's `compute()` — constructing the Index at a given size (an
- * indexed-MD5 Store insert per entry, or a BK-tree insert per entry) is
- * itself part of the lookup-axis comparison, not overhead to hide from it.
+ * one-time module load, mirroring the compute axis. `close()` is optional
+ * and called once per candidate after its whole store-size sweep finishes,
+ * for a candidate (e.g. img-guard's, which opens a real `:memory:`
+ * database per store size) that holds a resource needing explicit cleanup.
+ *
+ * `build()`'s cost is measured separately from `query()`'s (`buildMs` on
+ * each row) rather than folded into the steady-state query stats —
+ * constructing the Index at a given size (an indexed-MD5 Store insert per
+ * entry, or a BK-tree insert per entry) is real, size-dependent lookup-axis
+ * cost worth reporting, but it's a one-off per store size, not something
+ * `timeIt`'s repeated-sampling steady-state methodology applies to the way
+ * it does to `query()`.
+ *
+ * The `probe` handed to `query()` — an `{ md5, phash }` pair shaped like a
+ * seeded Entry minus its `path` — is generated once per store size, before
+ * `timeIt` starts, and the *same* probe is passed to every timed `query()`
+ * call. Generating it fresh per call (in particular calling `randomMd5()`
+ * inside a candidate's own `query()`) was a real bug: it added per-call
+ * overhead unrelated to the lookup itself, and asymmetrically, since only
+ * one candidate needed an md5 at all — see `img-guard-lookup.js`'s history.
+ * A candidate that doesn't need the md5 half (e.g. `bktree-fast`, a pure
+ * phash structure) simply ignores it.
  *
  * @param {object} args
- * @param {Array<() => {name: string, build: (entries: Array<{path: string, md5: string, phash: unknown}>) => unknown, query: (index: unknown, candidateHash: unknown, threshold: number) => {distance: number|null, matched: boolean}}>} args.candidates
+ * @param {Array<() => {name: string, build: (entries: Array<{path: string, md5: string, phash: unknown}>) => unknown, query: (index: unknown, probe: {md5: string, phash: unknown}, threshold: number) => {distance: number|null, matched: boolean}, close?: () => void}>} args.candidates
  * @param {number[]} args.storeSizes - Store sizes to sweep.
  * @param {number} args.runs - steady-state samples per (candidate, storeSize).
  * @param {number} args.threshold - Hamming-distance Similarity Threshold passed to every query().
  * @param {() => string} args.randomMd5
  * @param {() => unknown} args.randomPhash
- * @param {(fn: () => void, runs: number) => {mean: number, min: number, max: number}} args.timeIt
- * @returns {Array<{candidate: string, storeSize: number, coldStartMs: number, distance: number|null, matched: boolean, mean: number, min: number, max: number}>}
+ * @param {(fn: () => unknown, runs: number) => {mean: number, min: number, max: number, value: unknown}} args.timeIt
+ * @returns {Array<{candidate: string, storeSize: number, coldStartMs: number, buildMs: number, distance: number|null, matched: boolean, mean: number, min: number, max: number}>}
  */
 function runLookupBenchmark({
   candidates,
@@ -58,28 +75,32 @@ function runLookupBenchmark({
           phash: randomPhash(),
         });
       }
-      const index = candidate.build(entries);
-      const candidateHash = randomPhash();
 
-      let distance = null;
-      let matched = false;
-      const stats = timeIt(() => {
-        ({ distance, matched } = candidate.query(
-          index,
-          candidateHash,
-          threshold,
-        ));
-      }, runs);
+      const buildStart = performance.now();
+      const index = candidate.build(entries);
+      const buildMs = performance.now() - buildStart;
+
+      // Hoisted once per store size, then reused for every timed query()
+      // call below — see the doc comment above for why.
+      const probe = { md5: randomMd5(), phash: randomPhash() };
+
+      const { value, ...stats } = timeIt(
+        () => candidate.query(index, probe, threshold),
+        runs,
+      );
 
       rows.push({
         candidate: candidate.name,
         storeSize,
         coldStartMs,
-        distance,
-        matched,
+        buildMs,
+        distance: value.distance,
+        matched: value.matched,
         ...stats,
       });
     }
+
+    candidate.close?.();
   }
 
   return rows;

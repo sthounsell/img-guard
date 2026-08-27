@@ -21,6 +21,7 @@ const { bmpBytes } = require("../../../node/scripts/benchmark.js");
 const { timeIt } = require("../src/timeIt");
 const { runComputeBenchmark } = require("../src/runner");
 const { writeResultsFile } = require("../src/resultsFile");
+const { flag, formatRow } = require("../src/cli");
 const {
   createCandidate: createImgGuardCandidate,
 } = require("../src/candidates/img-guard");
@@ -32,19 +33,10 @@ const {
 } = require("../src/candidates/sharp-phash");
 
 function parseArgs(argv) {
-  const flag = (name, fallback) => {
-    const i = argv.indexOf(name);
-    return i === -1 ? fallback : argv[i + 1];
-  };
   return {
-    sizes: flag("--sizes", "64,512,2048,4096").split(",").map(Number),
-    runs: Number(flag("--runs", "20")),
+    sizes: flag(argv, "--sizes", "64,512,2048,4096").split(",").map(Number),
+    runs: Number(flag(argv, "--runs", "20")),
   };
-}
-
-function formatRow(label, { mean, min, max }) {
-  const pad = (n) => n.toFixed(3).padStart(9);
-  return `  ${label.padEnd(34)} mean${pad(mean)}ms   min${pad(min)}ms   max${pad(max)}ms`;
 }
 
 async function run(argv) {

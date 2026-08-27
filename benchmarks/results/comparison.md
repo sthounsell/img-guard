@@ -2,12 +2,42 @@
 
 Prepared for Radu (issue #19), closing the loop on issue #12's benchmark ask
 and ADR 0001/0002's Open Questions. Source data: the raw harness output in
-this directory (`compute-axis-2026-08-27T11-05-20-959Z.md`,
-`lookup-axis-2026-08-27T10-46-25-886Z.md`, `notes.md`) — this doc explains
+this directory (`compute-axis-2026-08-27T11-35-58-501Z.md`,
+`lookup-axis-2026-08-27T11-36-02-074Z.md`, `notes.md`) — this doc explains
 and interprets those numbers, it doesn't re-derive them. Two earlier
 `compute-axis-*.md` files (10:35, 10:52) are superseded partial runs from
-before all three compute candidates were wired in; the 11:05 file is the
-complete, canonical run.
+before all three compute candidates were wired in; the 11:05 file is a
+complete but pre-correction run, superseded by 11:35 (identical
+methodology, re-run to confirm the numbers hold — they do, within normal
+run-to-run noise). The 10:46 `lookup-axis-*.md` file is superseded outright
+by 11:36: a post-review pass found the lookup-axis harness itself had a
+measurement bug (see "Correction from the original run" below), so the
+10:46 numbers aren't just old, they're wrong.
+
+### Correction from the original run
+
+A code review of this harness after the first lookup-axis run found two
+methodology problems, both now fixed (see `src/lookupRunner.js` and
+`src/candidates/img-guard-lookup.js` for the detail):
+
+1. **Measurement asymmetry**: img-guard's candidate generated a fresh
+   random MD5 *inside* `query()`, on every single timed call, while
+   `bktree-fast`'s candidate did no equivalent per-call work. That added
+   real overhead to img-guard's numbers that had nothing to do with its
+   linear-scan lookup — visible at store size 0, where with nothing to
+   scan img-guard was still measured ~4.5x slower than `bktree-fast`. Fixed
+   by generating the query probe (`{ md5, phash }`) once per store size and
+   reusing the same probe for every timed call, for both candidates.
+2. **`build()` cost wasn't timed at all**, despite the original doc
+   claiming it was folded into the steady-state query stats — it's
+   actually excluded from every number below. Fixed by timing it
+   separately; every row now reports a `build (ms)` figure alongside the
+   query stats.
+
+Below reflects the corrected run. The bottom line is unchanged — `bktree-fast`
+is still meaningfully faster, and the gap still grows with store size — but
+the earlier "roughly two orders of magnitude" framing overstated the size of
+that gap; see the headline finding below for the corrected figure.
 
 ## Headline finding
 
@@ -22,12 +52,16 @@ looks like "the WASM boundary is costing us" rather than "a different,
 possibly more optimised DCT implementation."
 
 On the **lookup axis**, the difference is much starker and orthogonal to
-WASM vs. `napi-rs` entirely: `bktree-fast`'s BK-tree beats img-guard's own
-linear-scan lookup by roughly two orders of magnitude at a 10,000-entry
-store (100 queries: ~12ms vs. ~178ms, see below), with confirmed-matching
-distance/threshold semantics. That's a real, addressable bottleneck in
-img-guard's own Store lookup — worth pursuing regardless of how the
-WASM-vs-`napi-rs` question resolves.
+WASM vs. `napi-rs` entirely: at a 10,000-entry store, `bktree-fast`'s
+steady-state query mean is **~25x faster** than img-guard's own
+linear-scan lookup (0.069ms vs. 1.732ms), and counting cold start + build +
+100 queries together it's **~12x faster** (16.4ms vs. 192.6ms, see below),
+with confirmed-matching distance/threshold semantics. That's roughly an
+order of magnitude, not the "two orders of magnitude" an earlier draft of
+this doc claimed (see "Correction from the original run" above) — still a
+real, addressable bottleneck in img-guard's own Store lookup, worth
+pursuing regardless of how the WASM-vs-`napi-rs` question resolves, just
+not as extreme a gap as first reported.
 
 ## Methodology
 
@@ -40,11 +74,14 @@ WASM-vs-`napi-rs` question resolves.
   sweep `benches/phash_bench.rs` and `benchmark.js` already use.
 - **Lookup-axis store sizes**: 0, 100, 1,000, 10,000 entries, seeded with
   `randomMd5`/`randomPhash` (`benchmark.js`) — same sweep and seeding
-  approach as img-guard's own lookup benchmarking. Every query uses a fresh
-  random hash guaranteed absent from the seeded Store, so every candidate
-  exercises a genuine non-hit (img-guard's full `findExactMatch` miss +
-  phash linear scan; a real BK-tree miss) rather than an early Exact
-  short-circuit.
+  approach as img-guard's own lookup benchmarking. Every query uses the
+  *same* random `{ md5, phash }` probe, generated once per store size and
+  guaranteed absent from the seeded Store, so every candidate exercises a
+  genuine non-hit (img-guard's full `findExactMatch` miss + phash linear
+  scan; a real BK-tree miss) rather than an early Exact short-circuit — and
+  so every timed call does equivalent per-call work across candidates (see
+  "Correction from the original run" above for why that wasn't true of the
+  first run).
 - **Threshold**: 10 (CONTEXT.md's Similarity Threshold default), used for
   both img-guard's `classify()` and `bktree-fast`'s `find()`.
 - **Runs**: 20 steady-state samples per (candidate, size) or (candidate,
@@ -61,15 +98,13 @@ WASM-vs-`napi-rs` question resolves.
   Absolute numbers will differ elsewhere; the relative comparison between
   candidates, run under identical conditions on the same machine, is what's
   load-bearing here.
-- **Known gap**: the lookup-axis harness times `query()` only, not the
-  `build()` call that constructs each candidate's Index at a given store
-  size (`src/lookupRunner.js` builds the Index once per store size, outside
-  the timed loop). So "build cost" isn't separately available from this run
-  — the illustrative lookup-axis total below is cold-start + N queries, not
-  build + N queries, as originally sketched in issue #19's acceptance
-  criteria. Each store size's *query* mean does already reflect the cost of
-  operating against an Index of that size (visible in img-guard's numbers
-  scaling with store size), just not the one-time cost of constructing it.
+- **Build cost**: the lookup-axis harness times each store size's `build()`
+  call — the one-time cost of constructing that candidate's Index at that
+  size (an indexed-MD5 Store insert per entry, or a BK-tree insert per
+  entry) — separately from the steady-state `query()` stats, and reports it
+  as its own `build (ms)` figure per row rather than folding it into either
+  cold start or the query mean. The illustrative lookup-axis total below is
+  cold start + build + N queries.
 
 ## Compute axis
 
@@ -77,19 +112,19 @@ WASM-vs-`napi-rs` question resolves.
 
 | candidate | image size | bits | cold start (ms) | mean (ms) | min (ms) | max (ms) |
 | --- | --- | --- | --- | --- | --- | --- |
-| img-guard (WASM) | 64x64 | 64 | 3.107 | 0.331 | 0.138 | 3.745 |
-| img-guard (WASM) | 512x512 | 64 | 3.107 | 1.693 | 1.598 | 1.966 |
-| img-guard (WASM) | 2048x2048 | 64 | 3.107 | 32.514 | 31.989 | 33.787 |
-| img-guard (WASM) | 4096x4096 | 64 | 3.107 | 143.658 | 142.505 | 149.542 |
+| img-guard (WASM) | 64x64 | 64 | 1.907 | 0.292 | 0.057 | 3.215 |
+| img-guard (WASM) | 512x512 | 64 | 1.907 | 1.654 | 1.616 | 1.860 |
+| img-guard (WASM) | 2048x2048 | 64 | 1.907 | 32.723 | 32.227 | 33.740 |
+| img-guard (WASM) | 4096x4096 | 64 | 1.907 | 144.295 | 143.298 | 149.514 |
 | `phash` (npm) | — | — | — excluded, see below — | | | |
-| `@stabilityprotocol.com/phash` | 64x64 | 64 | 1.553 | 2.932 | 2.723 | 4.401 |
-| `@stabilityprotocol.com/phash` | 512x512 | 64 | 1.553 | 3.297 | 3.089 | 3.685 |
-| `@stabilityprotocol.com/phash` | 2048x2048 | 64 | 1.553 | 9.733 | 9.203 | 10.664 |
-| `@stabilityprotocol.com/phash` | 4096x4096 | 64 | 1.553 | 29.824 | 28.478 | 33.053 |
-| `sharp-phash` | 64x64 | 64 | 52.092 | 1.362 | 1.237 | 1.555 |
-| `sharp-phash` | 512x512 | 64 | 52.092 | 2.331 | 2.207 | 2.416 |
-| `sharp-phash` | 2048x2048 | 64 | 52.092 | 18.443 | 16.572 | 40.424 |
-| `sharp-phash` | 4096x4096 | 64 | 52.092 | 64.553 | 62.831 | 69.268 |
+| `@stabilityprotocol.com/phash` | 64x64 | 64 | 4.342 | 2.937 | 2.710 | 4.186 |
+| `@stabilityprotocol.com/phash` | 512x512 | 64 | 4.342 | 3.287 | 3.128 | 3.716 |
+| `@stabilityprotocol.com/phash` | 2048x2048 | 64 | 4.342 | 9.826 | 9.420 | 10.599 |
+| `@stabilityprotocol.com/phash` | 4096x4096 | 64 | 4.342 | 30.265 | 29.214 | 35.091 |
+| `sharp-phash` | 64x64 | 64 | 49.642 | 1.370 | 1.278 | 1.559 |
+| `sharp-phash` | 512x512 | 64 | 49.642 | 2.537 | 2.495 | 2.647 |
+| `sharp-phash` | 2048x2048 | 64 | 49.642 | 21.111 | 19.301 | 44.033 |
+| `sharp-phash` | 4096x4096 | 64 | 49.642 | 75.237 | 73.937 | 80.464 |
 
 ### Illustrative total execution time
 
@@ -99,9 +134,9 @@ just restate the cold-start column):
 
 | candidate | cold start | 100 × 512x512 calls | **total (illustrative)** |
 | --- | --- | --- | --- |
-| img-guard (WASM) | 3.107ms | 169.300ms | **172.407ms** |
-| `@stabilityprotocol.com/phash` | 1.553ms | 329.700ms | **331.253ms** |
-| `sharp-phash` | 52.092ms | 233.100ms | **285.192ms** |
+| img-guard (WASM) | 1.907ms | 165.400ms | **167.307ms** |
+| `@stabilityprotocol.com/phash` | 4.342ms | 328.700ms | **333.042ms** |
+| `sharp-phash` | 49.642ms | 253.700ms | **303.342ms** |
 
 At this size and call count, img-guard's low cold start keeps it ahead of
 both externals despite a higher per-call cost than `sharp-phash`;
@@ -170,41 +205,57 @@ per bit.
 
 ### Per-operation breakdown
 
-| candidate | store size | matched | distance | cold start (ms) | mean (ms) | min (ms) | max (ms) |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| img-guard (indexed-MD5 + linear-scan-phash) | 0 | false | — | 7.258 | 0.009 | 0.002 | 0.070 |
-| img-guard (indexed-MD5 + linear-scan-phash) | 100 | false | 22 | 7.258 | 0.054 | 0.021 | 0.426 |
-| img-guard (indexed-MD5 + linear-scan-phash) | 1000 | false | 18 | 7.258 | 0.207 | 0.167 | 0.338 |
-| img-guard (indexed-MD5 + linear-scan-phash) | 10000 | false | 17 | 7.258 | 1.710 | 1.397 | 2.133 |
-| bktree-fast (BK-tree) | 0 | false | — | 5.604 | 0.002 | 0.000 | 0.032 |
-| bktree-fast (BK-tree) | 100 | false | — | 5.604 | 0.001 | 0.000 | 0.002 |
-| bktree-fast (BK-tree) | 1000 | false | — | 5.604 | 0.005 | 0.004 | 0.017 |
-| bktree-fast (BK-tree) | 10000 | false | — | 5.604 | 0.064 | 0.055 | 0.118 |
+| candidate | store size | matched | distance | cold start (ms) | build (ms) | mean (ms) | min (ms) | max (ms) |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| img-guard (indexed-MD5 + linear-scan-phash) | 0 | false | — | 6.486 | 4.528 | 0.004 | 0.001 | 0.047 |
+| img-guard (indexed-MD5 + linear-scan-phash) | 100 | false | 22 | 6.486 | 0.861 | 0.045 | 0.017 | 0.345 |
+| img-guard (indexed-MD5 + linear-scan-phash) | 1000 | false | 18 | 6.486 | 1.352 | 0.183 | 0.148 | 0.287 |
+| img-guard (indexed-MD5 + linear-scan-phash) | 10000 | false | 18 | 6.486 | 12.947 | 1.732 | 1.414 | 2.379 |
+| bktree-fast (BK-tree) | 0 | false | — | 7.631 | 0.073 | 0.002 | 0.000 | 0.033 |
+| bktree-fast (BK-tree) | 100 | false | — | 7.631 | 0.038 | 0.001 | 0.001 | 0.002 |
+| bktree-fast (BK-tree) | 1000 | false | — | 7.631 | 0.264 | 0.004 | 0.003 | 0.011 |
+| bktree-fast (BK-tree) | 10000 | false | — | 7.631 | 1.841 | 0.069 | 0.052 | 0.125 |
 
 Every query in this run is a genuine miss (`matched: false`) by design —
-each query hash is freshly random and never present in the seeded Store, so
-every candidate exercises its real non-hit path rather than an early Exact
-short-circuit. img-guard still reports a distance on every miss because its
-`New` classification's linear scan already visits the whole Store, so the
-closest distance found is free to report (CONTEXT.md's `New` definition).
-`bktree-fast` reports `—` (`null`) on every miss — see the parity/gap
-finding below for why that's structural, not a data artefact.
+every candidate is handed the same freshly-random probe for a given store
+size, never present in the seeded Store, so every candidate exercises its
+real non-hit path rather than an early Exact short-circuit. img-guard still
+reports a distance on every miss because its `New` classification's linear
+scan already visits the whole Store, so the closest distance found is free
+to report (CONTEXT.md's `New` definition). `bktree-fast` reports `—`
+(`null`) on every miss — see the parity/gap finding below for why that's
+structural, not a data artefact.
+
+At store size 0, with nothing in the Store to scan, img-guard's mean is
+still ~2x `bktree-fast`'s (0.004ms vs. 0.002ms) — a small, expected residual
+from per-call adapter overhead (constructing the `{ md5, getPhash }` object
+`classify()` needs vs. `bktree-fast`'s hex-string conversion), not the
+~4.5x the pre-fix measurement bug produced at this same store size (see
+"Correction from the original run" above).
 
 ### Illustrative total execution time
 
-Cold start + 100 queries at store size 1,000 (mid-range in the sweep):
+Cold start + build + 100 queries at store size 1,000 (mid-range in the
+sweep):
 
-| candidate | cold start | 100 × queries (store size 1,000) | **total (illustrative)** |
-| --- | --- | --- | --- |
-| img-guard (indexed-MD5 + linear-scan-phash) | 7.258ms | 20.700ms | **27.958ms** |
-| bktree-fast (BK-tree) | 5.604ms | 0.500ms | **6.104ms** |
+| candidate | cold start | build | 100 × queries (store size 1,000) | **total (illustrative)** |
+| --- | --- | --- | --- | --- |
+| img-guard (indexed-MD5 + linear-scan-phash) | 6.486ms | 1.352ms | 18.300ms | **26.138ms** |
+| bktree-fast (BK-tree) | 7.631ms | 0.264ms | 0.400ms | **8.295ms** |
 
-The gap widens sharply as the store grows: at store size 10,000, the same
-100-query total is **178.258ms** for img-guard (7.258ms + 100 × 1.710ms)
-against **12.004ms** for `bktree-fast` (5.604ms + 100 × 0.064ms) — img-guard's
-linear scan grows roughly linearly with store size, while the BK-tree's
-per-query cost barely moves. Cold start is a rounding error next to that
-gap at any store size that matters in practice.
+The gap widens as the store grows: at store size 10,000, the same total is
+**192.633ms** for img-guard (6.486ms + 12.947ms + 100 × 1.732ms) against
+**16.372ms** for `bktree-fast` (7.631ms + 1.841ms + 100 × 0.069ms) —
+**~12x**, not the "~two orders of magnitude" an earlier draft of this doc
+claimed (see "Correction from the original run" above). Counted as
+steady-state query mean alone (no cold start or build), the gap at store
+size 10,000 is wider — **~25x** (1.732ms vs. 0.069ms) — since cold start and
+build are one-off costs that matter less the more queries are batched
+against them. Either way, img-guard's linear scan grows roughly linearly
+with store size, while the BK-tree's per-query cost barely moves, and
+`build()` cost itself also grows faster for img-guard's SQLite-backed Index
+than for `bktree-fast`'s in-memory tree (12.947ms vs. 1.841ms at 10,000
+entries).
 
 ### `bktree-fast` distance/threshold parity finding
 

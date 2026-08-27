@@ -21,19 +21,24 @@
  * ones), so no candidate needs special-casing in the runner and every
  * candidate in a given run is measured by the same code.
  *
+ * Returns `value` — `fn`'s own resolved return value from its last call —
+ * alongside the timing stats, so a caller that needs what the timed call
+ * produced doesn't have to smuggle it out via an outer-scope variable.
+ *
  * @param {() => unknown} fn - may return a plain value or a Promise; either way it's awaited before the next sample starts.
  * @param {number} runs
- * @returns {Promise<{mean: number, min: number, max: number}>}
+ * @returns {Promise<{mean: number, min: number, max: number, value: unknown}>}
  */
 async function timeIt(fn, runs) {
   const samples = [];
+  let value;
   for (let i = 0; i < runs; i += 1) {
     const start = performance.now();
-    await fn();
+    value = await fn();
     samples.push(performance.now() - start);
   }
   const mean = samples.reduce((sum, ms) => sum + ms, 0) / samples.length;
-  return { mean, min: Math.min(...samples), max: Math.max(...samples) };
+  return { mean, min: Math.min(...samples), max: Math.max(...samples), value };
 }
 
 module.exports = { timeIt };

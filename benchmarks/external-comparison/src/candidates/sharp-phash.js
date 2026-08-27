@@ -16,10 +16,11 @@
  *    unsupported image format" — confirmed, not a sandbox artifact (see
  *    benchmarks/results/notes.md). Same fix as `@stabilityprotocol.com/
  *    phash` (#15): decode the harness's specific BMP shape ourselves
- *    (`rgbFromBmp` below) and hand `sharp` already-decoded raw pixel data
- *    via its `{ raw: { width, height, channels } }` input mode instead of
- *    asking it to decode BMP. Decode cost stays inside the timed call,
- *    same methodology as every other candidate.
+ *    (`../bmpDecode.js`, shared with that candidate) and hand `sharp`
+ *    already-decoded raw pixel data via its `{ raw: { width, height,
+ *    channels } }` input mode instead of asking it to decode BMP. Decode
+ *    cost stays inside the timed call, same methodology as every other
+ *    candidate.
  *
  * 2. `sharp-phash`'s hashing function is unavoidably async (`sharp` has no
  *    synchronous API — every operation runs through libvips' worker-thread
@@ -47,27 +48,7 @@
  * this is the real npm package (and the real `sharp`/libvips native
  * binding), exercised only by actually running the benchmark.
  */
-function rgbFromBmp(buf) {
-  const width = buf.readInt32LE(18);
-  const height = buf.readInt32LE(22);
-  const pixelOffset = buf.readUInt32LE(10);
-  const rowSize = Math.ceil((width * 3) / 4) * 4; // rows pad to a 4-byte boundary
-  const rgb = Buffer.alloc(width * height * 3);
-
-  for (let y = 0; y < height; y += 1) {
-    // BMP rows are stored bottom-up; flip to top-down.
-    const srcRow = pixelOffset + (height - 1 - y) * rowSize;
-    for (let x = 0; x < width; x += 1) {
-      const srcIdx = srcRow + x * 3;
-      const dstIdx = (y * width + x) * 3;
-      rgb[dstIdx] = buf[srcIdx + 2]; // R (BMP stores B, G, R)
-      rgb[dstIdx + 1] = buf[srcIdx + 1]; // G
-      rgb[dstIdx + 2] = buf[srcIdx]; // B
-    }
-  }
-
-  return { rgb, width, height };
-}
+const { decodeBmp } = require("../bmpDecode");
 
 async function createCandidate() {
   const sharpPhash = require("sharp-phash");
@@ -82,8 +63,8 @@ async function createCandidate() {
   return {
     name: "sharp-phash",
     async compute(imageBytes) {
-      const { rgb, width, height } = rgbFromBmp(imageBytes);
-      const hash = await sharpPhash(rgb, {
+      const { pixels, width, height } = decodeBmp(imageBytes);
+      const hash = await sharpPhash(pixels, {
         raw: { width, height, channels: 3 },
       });
       // sharp-phash's DCT hash is a fixed 8x8 low-frequency-coefficient

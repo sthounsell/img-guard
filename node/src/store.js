@@ -31,6 +31,16 @@ function openStore(filePath) {
   const insertStmt = db.prepare(
     "INSERT INTO entries (path, md5, phash, recorded_at) VALUES (?, ?, ?, ?)",
   );
+  const insertMany = db.transaction((entries) => {
+    for (const {
+      path,
+      md5,
+      phash,
+      recordedAt = new Date().toISOString(),
+    } of entries) {
+      insertStmt.run(path, md5, BigInt.asIntN(64, phash), recordedAt);
+    }
+  });
 
   /**
    * A u64 phash doesn't fit SQLite's signed 64-bit INTEGER column as-is —
@@ -69,6 +79,21 @@ function openStore(filePath) {
      */
     addEntry({ path, md5, phash, recordedAt = new Date().toISOString() }) {
       insertStmt.run(path, md5, BigInt.asIntN(64, phash), recordedAt);
+    },
+
+    /**
+     * Appends many Entries as a single SQLite transaction — unlike calling
+     * `addEntry` in a loop, doesn't commit (and fsync) once per Entry, so
+     * seeding a large Store is a single-digit-transaction cost rather than
+     * N of them.
+     */
+    addEntries(entries) {
+      insertMany(entries);
+    },
+
+    /** Closes the underlying SQLite connection. */
+    close() {
+      db.close();
     },
   };
 }

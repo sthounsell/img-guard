@@ -9,8 +9,9 @@ const { runComputeBenchmark } = require("../src/runner");
  * independent of the real `src/timeIt.js` (issue #13's Testing Decision:
  * orchestration logic tested against fakes, not real infra). */
 async function fakeTimeIt(fn, runs) {
-  for (let i = 0; i < runs; i += 1) await fn();
-  return { mean: 1, min: 1, max: 1 };
+  let value;
+  for (let i = 0; i < runs; i += 1) value = await fn();
+  return { mean: 1, min: 1, max: 1, value };
 }
 
 const fakeBmpBytes = (size) => Buffer.alloc(size);
