@@ -31,3 +31,13 @@ cd node && npm run benchmark      # cold start, compute-by-image-size, and looku
 - Node bootstrap + WASM module instantiation (paid once per CLI invocation) from the actual md5/phash/Store work, so a head-to-head against another solution compares like-for-like compute rather than being skewed by process startup;
 - compute cost by image size, since phash cost grows with it;
 - lookup cost by how many images are already in the Store, since `classify()`'s Similar/New path scans every Entry — `findExactMatch` should stay flat as the Store grows, `getEntries`/`classify()-as-New` shouldn't.
+
+### External comparison (issue #12)
+
+```bash
+cd benchmarks/external-comparison
+npm install
+npm run benchmark:compute         # img-guard vs. external Node phash candidates
+```
+
+Isolated from `node/package.json` — comparison-only dependencies for Radu's four candidates (`phash`, `@stabilityprotocol.com/phash`, `bktree-fast`, `sharp-phash`) never enter img-guard's real dependency tree. Reuses `node/scripts/benchmark.js`'s fixture generation and timing helpers. Results are written to `benchmarks/results/`.

@@ -1,5 +1,6 @@
 /target
 /node/node_modules
+/benchmarks/external-comparison/node_modules
 store.json
 store.db
 .DS_Store
