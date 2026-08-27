@@ -21,7 +21,7 @@ describe("writeResultsFile", () => {
         [
           {
             candidate: "fake",
-            size: 64,
+            label: "64x64 (synthetic)",
             bits: 64,
             coldStartMs: 1.2345,
             mean: 1,

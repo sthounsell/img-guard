@@ -39,7 +39,7 @@ function writeTimestampedFile(
  * Writes a compute-axis results table to a checked-in, timestamped Markdown
  * file (issue #13's acceptance criteria) rather than only printing it.
  *
- * @param {Array<{candidate: string, size: number, bits: number, coldStartMs: number, mean: number, min: number, max: number}>} rows
+ * @param {Array<{candidate: string, label: string, bits: number, coldStartMs: number, mean: number, min: number, max: number}>} rows
  * @param {object} options
  * @param {string} options.dir - directory to write into (created if missing).
  * @param {string} [options.timestamp] - ISO-ish timestamp; defaults to now.
@@ -48,13 +48,16 @@ function writeTimestampedFile(
 function writeResultsFile(rows, options) {
   const timestamp = options.timestamp ?? new Date().toISOString();
 
+  // "image" rather than "image size" (issue #21): rows now include real
+  // photos alongside synthetic squares, and a real photo's label carries a
+  // filename/dimensions, not just a size.
   const header = [
-    "| candidate | image size | bits | cold start (ms) | mean (ms) | min (ms) | max (ms) |",
+    "| candidate | image | bits | cold start (ms) | mean (ms) | min (ms) | max (ms) |",
     "| --- | --- | --- | --- | --- | --- | --- |",
   ];
   const dataRows = rows.map(
     (r) =>
-      `| ${r.candidate} | ${r.size}x${r.size} | ${r.bits} | ${r.coldStartMs.toFixed(3)} | ${r.mean.toFixed(3)} | ${r.min.toFixed(3)} | ${r.max.toFixed(3)} |`,
+      `| ${r.candidate} | ${r.label} | ${r.bits} | ${r.coldStartMs.toFixed(3)} | ${r.mean.toFixed(3)} | ${r.min.toFixed(3)} | ${r.max.toFixed(3)} |`,
   );
 
   const content = [

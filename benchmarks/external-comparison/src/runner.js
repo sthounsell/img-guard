@@ -6,12 +6,21 @@
  * same split `node/scripts/benchmark.js` already applies to img-guard's own
  * WASM instantiation, since a one-time module-load / native-binding-init
  * cost (e.g. `sharp-phash`'s native binding) isn't ongoing per-image cost —
- * then times steady-state `compute()` calls across every image size.
+ * then times steady-state `compute()` calls across every image.
  *
- * Pure and injectable (`bmpBytes`/`timeIt` passed in rather than required
- * directly) so it's testable against a trivial fake candidate without
- * touching the real WASM module or fixture generator (issue #13's Testing
- * Decision) — same pattern `classify()` uses against a fake Store.
+ * Pure and injectable (`timeIt` passed in rather than required directly) so
+ * it's testable against a trivial fake candidate without touching the real
+ * WASM module or any real image (issue #13's Testing Decision) — same
+ * pattern `classify()` uses against a fake Store.
+ *
+ * Takes a caller-built `images` list (issue #21) rather than `sizes` +
+ * `bmpBytes` — the runner no longer knows or cares whether an image is a
+ * synthetic fixture or a real photo, only that it has `bytes` to hand a
+ * candidate and a `label` to carry through to the results table. Building
+ * that list (synthetic sweep, optionally plus real files read from disk) is
+ * the caller's job, mirroring `node/scripts/benchmark.js`'s own
+ * `benchmarkImageSizes`, which already combines a synthetic sweep with one
+ * optional real image the same way.
  *
  * Candidate factory shape (issue #12's compute-axis adapter interface):
  * `() => { name, compute(imageBytes) -> { hash, bits } }`. The factory call
@@ -34,19 +43,12 @@
  *
  * @param {object} args
  * @param {Array<() => ({name: string, compute: (bytes: Buffer) => ({hash: unknown, bits: number} | Promise<{hash: unknown, bits: number}>)}) | Promise<{name: string, compute: Function}>>} args.candidates
- * @param {number[]} args.sizes - image side lengths to sweep.
- * @param {number} args.runs - steady-state samples per (candidate, size).
- * @param {(size: number) => Buffer} args.bmpBytes
+ * @param {Array<{label: string, bytes: Buffer}>} args.images - images to sweep, synthetic and/or real; `label` is carried through to each row unchanged.
+ * @param {number} args.runs - steady-state samples per (candidate, image).
  * @param {(fn: () => unknown, runs: number) => Promise<{mean: number, min: number, max: number, value: unknown}>} args.timeIt
- * @returns {Promise<Array<{candidate: string, size: number, bits: number, coldStartMs: number, mean: number, min: number, max: number}>>}
+ * @returns {Promise<Array<{candidate: string, label: string, bits: number, coldStartMs: number, mean: number, min: number, max: number}>>}
  */
-async function runComputeBenchmark({
-  candidates,
-  sizes,
-  runs,
-  bmpBytes,
-  timeIt,
-}) {
+async function runComputeBenchmark({ candidates, images, runs, timeIt }) {
   const rows = [];
 
   for (const createCandidate of candidates) {
@@ -54,9 +56,7 @@ async function runComputeBenchmark({
     const candidate = await createCandidate();
     const coldStartMs = performance.now() - loadStart;
 
-    for (const size of sizes) {
-      const bytes = bmpBytes(size);
-
+    for (const { label, bytes } of images) {
       const { value, ...stats } = await timeIt(
         () => candidate.compute(bytes),
         runs,
@@ -64,7 +64,7 @@ async function runComputeBenchmark({
 
       rows.push({
         candidate: candidate.name,
-        size,
+        label,
         bits: value.bits,
         coldStartMs,
         ...stats,

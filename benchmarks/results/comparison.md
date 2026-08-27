@@ -83,6 +83,17 @@ is faster per-call than img-guard above 64x64, but not by a margin that
 looks like "the WASM boundary is costing us" rather than "a different,
 possibly more optimised DCT implementation."
 
+**Real-world correction (2026-08-27, issue #21)**: against Radu's actual
+sample photos rather than synthetic squares, the gap against `sharp-phash`
+at large sizes is bigger than the synthetic sweep suggested — 3.85x-8.31x,
+not ~1.9x — and has an identified, specific cause rather than just "a
+different implementation": JPEG supports shrink-on-load (decoding directly
+to a downscaled image, far cheaper than full-resolution decode), which
+`sharp-phash`'s libvips backend exploits and img-guard's `image`-crate
+decoder structurally can't. That's a real decode-path difference a
+`napi-rs` rewrite using the same crate wouldn't fix on its own — see "Real-
+world images" under Compute axis below, and ADR 0002.
+
 On the **lookup axis**, the difference is much starker and orthogonal to
 WASM vs. `napi-rs` entirely: at a 10,000-entry store, `bktree-fast`'s
 steady-state query mean is **~33x faster** than img-guard's own
@@ -238,6 +249,72 @@ per bit.
   (`src/timeIt.js`) rather than reusing `benchmark.js`'s synchronous-only
   one.
 
+### Real-world images (2026-08-27, issue #21)
+
+Radu supplied 4 real sample photos (real cameras — Google Pixel 10 Pro XL,
+Sony ILCE-7RM5 — 4898x3265 up to 9504x6336, 2.9-52MB) to check the synthetic
+sweep's findings against actual files rather than only synthetic BMP
+squares up to 4096x4096. Not committed to the repo (real photos with GPS
+EXIF data); run via `--images` (see "Reproducing this" below). Full numbers
+in `compute-axis-2026-08-27T14-50-35-530Z.md`.
+
+**Hash size still matches across all three candidates for every real photo**
+(64-bit throughout) — the parity noted above under "Hash bit-length" isn't
+an artefact of the synthetic fixture, it holds at real-world resolutions
+too.
+
+**The gap at large sizes is worse than the synthetic sweep predicted, and
+now has an identified cause.** At 4096x4096 (synthetic), img-guard trailed
+`sharp-phash` by ~1.9x. Against the real photos, the gap is **3.85x-8.31x**
+— on Radu2 (4898x3265, fewer total pixels than the 4096x4096 synthetic
+square), img-guard takes 173.181ms against `sharp-phash`'s 20.848ms.
+
+The cause: `sharp-phash` decodes via `sharp`/libvips, and JPEG — unlike raw
+pixel data — supports *shrink-on-load*: the decoder can produce a
+downscaled image directly from the compressed stream at a fraction of
+full-resolution decode cost, before phash's own 8x8 DCT-coefficient grid
+ever needs the full pixel count. img-guard's WASM `phash` decodes via the
+`image` crate, which has no equivalent fractional-decode path for
+JPEG — every call pays full-resolution decode cost regardless of how much
+of that detail phash actually uses. The synthetic BMP sweep couldn't surface
+this at all: raw pixel data has no compressed lower-resolution
+representation for *any* decoder to shrink into, so it understated
+`sharp-phash`'s real-world advantage specifically on JPEG input.
+
+**`@stabilityprotocol.com/phash`'s real-image numbers don't show the same
+widening** — the gap against img-guard is actually *narrower* than
+synthetic implied (2.28x-3.29x here vs. ~4.65x at 4096x4096 synthetic).
+This isn't a property of the library — `fromRgba` only ever takes
+pre-decoded pixels, it doesn't decode images itself — it's a property of
+this harness's adapter: real images are decoded via `sharp` at full
+resolution (`.raw().ensureAlpha()`, no resize) before handing pixels to
+`fromRgba`, so this candidate doesn't benefit from shrink-on-load the way
+`sharp-phash` does internally. Its real-image numbers reflect "full JPEG
+decode via sharp, no shrink, plus a pure-JS DCT reduction" — a different
+decode path from the synthetic BMP one (a cheap hand-rolled decoder with no
+equivalent cost), which is why the two aren't a clean size-for-size
+comparison. Worth a future ticket if `@stabilityprotocol.com/phash`'s
+real-world number specifically matters to Radu's decision — pre-resizing
+during the `sharp` decode step would likely close most of this gap, but
+wasn't done here since it changes what's being measured (decode-to-thumbnail
+cost, not "this library's real per-call cost") without a clear steer to
+make that call.
+
+| candidate                      | image                  | bits | mean (ms) |
+| ------------------------------ | ----------------------- | ---- | --------- |
+| img-guard (WASM)               | Radu1.jpg (4992x3136)   | 64   | 184.543   |
+| img-guard (WASM)               | Radu2.jpg (4898x3265)   | 64   | 173.181   |
+| img-guard (WASM)               | Radu3.jpg (9504x6336)   | 64   | 930.412   |
+| img-guard (WASM)               | Radu4.jpg (9504x6336)   | 64   | 992.980   |
+| `@stabilityprotocol.com/phash` | Radu1.jpg (4992x3136)   | 64   | 81.033    |
+| `@stabilityprotocol.com/phash` | Radu2.jpg (4898x3265)   | 64   | 52.680    |
+| `@stabilityprotocol.com/phash` | Radu3.jpg (9504x6336)   | 64   | 368.744   |
+| `@stabilityprotocol.com/phash` | Radu4.jpg (9504x6336)   | 64   | 393.173   |
+| `sharp-phash`                  | Radu1.jpg (4992x3136)   | 64   | 32.089    |
+| `sharp-phash`                  | Radu2.jpg (4898x3265)   | 64   | 20.848    |
+| `sharp-phash`                  | Radu3.jpg (9504x6336)   | 64   | 232.419   |
+| `sharp-phash`                  | Radu4.jpg (9504x6336)   | 64   | 258.049   |
+
 ## Lookup axis
 
 ### Per-operation breakdown
@@ -372,6 +449,12 @@ worth weighing against the lookup-speed win, not a free upgrade.
   (`sharp-phash`) and a pure-JS library (`@stabilityprotocol.com/phash`)
   both pull ahead. That's weak evidence, at best, that switching to
   `napi-rs` would meaningfully improve compute performance — see ADR 0002.
+  Real-world images (issue #21) sharpen this: the gap at large sizes is
+  bigger than synthetic sizes suggested, and specifically caused by JPEG
+  shrink-on-load — a decode-path capability, not a WASM-vs-native-binding
+  question. Swapping WASM for `napi-rs` on the same `image` crate wouldn't
+  close it; only a decoder with fractional/shrink-on-load JPEG decoding
+  would.
 - **Lookup axis**: img-guard's own lookup is the real bottleneck at scale,
   and it's a Node-side implementation choice, not a consequence of the
   Rust/WASM boundary at all — but issue #20's plain-array candidate shows
@@ -392,4 +475,11 @@ npm run benchmark:lookup    # writes benchmarks/results/lookup-axis-<timestamp>.
 ```
 
 Both scripts accept `--sizes`/`--store-sizes` and `--runs` flags — see
-`scripts/run-compute.js`/`scripts/run-lookup.js`.
+`scripts/run-compute.js`/`scripts/run-lookup.js`. `run-compute.js` also
+takes `--images path1.jpg,path2.jpg,...` to add real files (from anywhere
+on disk — never committed to this repo) to the sweep alongside the
+synthetic sizes, e.g. the "Real-world images" run above:
+
+```
+npm run benchmark:compute -- --images /path/to/Radu1.jpg,/path/to/Radu2.jpg --runs 10
+```

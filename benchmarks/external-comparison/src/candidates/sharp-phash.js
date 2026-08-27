@@ -6,7 +6,7 @@
  * and results table as img-guard's own candidate and the other external
  * candidates, with no per-candidate special-casing in the runner itself.
  *
- * Two integration wrinkles, both worth recording (mirrors #15's own note):
+ * Three integration wrinkles, all worth recording (mirrors #15's own note):
  *
  * 1. `sharp-phash` decodes images via `sharp` — a native binding on top of
  *    `libvips` — but the standard prebuilt `sharp` binary doesn't compile
@@ -21,6 +21,13 @@
  *    channels } }` input mode instead of asking it to decode BMP. Decode
  *    cost stays inside the timed call, same methodology as every other
  *    candidate.
+ *
+ *    This workaround is BMP-specific, not a general "hand `sharp`
+ *    pre-decoded pixels" policy — JPEG (issue #21's real-photo fixtures)
+ *    has no such gap in `sharp`'s prebuilt binary, so a real image's bytes
+ *    go to `sharp-phash` directly, letting libvips do the JPEG decode
+ *    itself (still inside the timed call). `isSyntheticBmp` (shared with
+ *    `stabilityprotocol-phash.js`) picks the path per call.
  *
  * 2. `sharp-phash`'s hashing function is unavoidably async (`sharp` has no
  *    synchronous API — every operation runs through libvips' worker-thread
@@ -48,7 +55,7 @@
  * this is the real npm package (and the real `sharp`/libvips native
  * binding), exercised only by actually running the benchmark.
  */
-const { decodeBmp } = require("../bmpDecode");
+const { decodeBmp, isSyntheticBmp } = require("../bmpDecode");
 
 async function createCandidate() {
   const sharpPhash = require("sharp-phash");
@@ -63,10 +70,17 @@ async function createCandidate() {
   return {
     name: "sharp-phash",
     async compute(imageBytes) {
-      const { pixels, width, height } = decodeBmp(imageBytes);
-      const hash = await sharpPhash(pixels, {
-        raw: { width, height, channels: 3 },
-      });
+      let hash;
+      if (isSyntheticBmp(imageBytes)) {
+        const { pixels, width, height } = decodeBmp(imageBytes);
+        hash = await sharpPhash(pixels, {
+          raw: { width, height, channels: 3 },
+        });
+      } else {
+        // A real encoded image (e.g. JPEG) — sharp's prebuilt binary
+        // handles it natively, no manual decode needed.
+        hash = await sharpPhash(imageBytes);
+      }
       // sharp-phash's DCT hash is a fixed 8x8 low-frequency-coefficient
       // grid (LOW_SIZE=8 in its own source), returned as a 64-character
       // '0'/'1' string — 64 bits, recorded from the actual output length

@@ -49,4 +49,19 @@ function decodeBmp(buf, { withAlpha = false } = {}) {
   return { pixels, width, height };
 }
 
-module.exports = { decodeBmp };
+/**
+ * True if `buf` starts with the BMP magic bytes (`"BM"`) — i.e. it's this
+ * harness's synthetic fixture, not a real encoded image (issue #21: real
+ * files handed in via `--images` are JPEGs, which `decodeBmp` was never
+ * built to read). Candidates that need pixel data use this to pick between
+ * `decodeBmp` (synthetic) and a real decoder (`sharp`, which reads JPEG
+ * natively) rather than assuming every input is the synthetic shape.
+ *
+ * @param {Buffer} buf
+ * @returns {boolean}
+ */
+function isSyntheticBmp(buf) {
+  return buf.length >= 2 && buf[0] === 0x42 && buf[1] === 0x4d; // "BM"
+}
+
+module.exports = { decodeBmp, isSyntheticBmp };
