@@ -256,4 +256,4 @@ if (require.main === module) {
   run(process.argv.slice(2));
 }
 
-module.exports = { run, parseArgs, timeIt, bmpBytes };
+module.exports = { run, parseArgs, timeIt, bmpBytes, randomMd5, randomPhash };

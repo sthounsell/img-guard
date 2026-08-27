@@ -44,4 +44,50 @@ function writeResultsFile(rows, { dir, timestamp = new Date().toISOString() }) {
   return filePath;
 }
 
-module.exports = { writeResultsFile };
+/**
+ * Writes a lookup-axis results table to a checked-in, timestamped Markdown
+ * file (issue #17's acceptance criteria), in the same `benchmarks/results/`
+ * directory and same durable/diffable convention as `writeResultsFile`'s
+ * compute-axis output — its own section (a distinct file/table, since the
+ * two axes' columns aren't compatible) reusing the same results-writing
+ * module rather than a separate ad-hoc format.
+ *
+ * @param {Array<{candidate: string, storeSize: number, coldStartMs: number, distance: number|null, matched: boolean, mean: number, min: number, max: number}>} rows
+ * @param {object} options
+ * @param {string} options.dir - directory to write into (created if missing).
+ * @param {string} [options.timestamp] - ISO-ish timestamp; defaults to now.
+ * @returns {string} the written file's path.
+ */
+function writeLookupResultsFile(
+  rows,
+  { dir, timestamp = new Date().toISOString() },
+) {
+  fs.mkdirSync(dir, { recursive: true });
+
+  const safeTimestamp = timestamp.replace(/[:.]/g, "-");
+  const filePath = path.join(dir, `lookup-axis-${safeTimestamp}.md`);
+
+  const header = [
+    "| candidate | store size | matched | distance | cold start (ms) | mean (ms) | min (ms) | max (ms) |",
+    "| --- | --- | --- | --- | --- | --- | --- | --- |",
+  ];
+  const dataRows = rows.map(
+    (r) =>
+      `| ${r.candidate} | ${r.storeSize} | ${r.matched} | ${r.distance ?? "—"} | ${r.coldStartMs.toFixed(3)} | ${r.mean.toFixed(3)} | ${r.min.toFixed(3)} | ${r.max.toFixed(3)} |`,
+  );
+
+  const content = [
+    "# Lookup-axis benchmark results",
+    "",
+    `Generated ${timestamp}. See issue #12 for methodology and #17 for this harness.`,
+    "",
+    ...header,
+    ...dataRows,
+    "",
+  ].join("\n");
+
+  fs.writeFileSync(filePath, content);
+  return filePath;
+}
+
+module.exports = { writeResultsFile, writeLookupResultsFile };
