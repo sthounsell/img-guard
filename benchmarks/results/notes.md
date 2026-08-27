@@ -60,3 +60,65 @@ candidate, so the comparison remains apples-to-apples. That decoder only
 handles the exact BMP shape `bmpBytes()` produces (24-bit uncompressed
 BITMAPINFOHEADER, bottom-up, BGR, row-padded) — not BMP-the-format
 generally.
+
+## `sharp-phash` — wired in as a compute-axis candidate (issue #16)
+
+Installs and runs cleanly on this platform (macOS arm64, Node 26, `sharp`
+0.35.4 / libvips 8.18.6 prebuilt binaries) — no install/build blocker like
+#14's. `sharp` is only a peer dependency of `sharp-phash` (not a direct one
+of its own), so it isn't hand-added to `package.json`'s `dependencies`
+(per this issue's acceptance criterion — `sharp-phash` only); npm 7+'s
+auto-install-peers behaviour installs it anyway, and it's pinned via the
+checked-in `package-lock.json` like everything else here.
+
+Two integration wrinkles, both documented in full in
+`src/candidates/sharp-phash.js`:
+
+- **BMP unsupported**: `sharp`'s standard prebuilt binary doesn't compile
+  in ImageMagick/GraphicsMagick's BMP loader (`sharp.format.magick`'s
+  input/output flags are all `false`), so handing it the harness's raw BMP
+  fixture throws `Input buffer contains unsupported image format` —
+  confirmed by inspecting `sharp.format` directly, not a sandbox artifact.
+  Same fix as `@stabilityprotocol.com/phash` (#15): the candidate wrapper
+  decodes the harness's specific BMP shape itself and hands `sharp`
+  already-decoded raw pixel data via its `{ raw: { width, height,
+  channels } }` input mode instead.
+- **Unavoidably async**: `sharp` has no synchronous API (every operation
+  runs through libvips' worker-thread pool), so `sharp-phash`'s hash
+  function is Promise-based. The compute-axis adapter interface and
+  runner (`src/runner.js`) were extended to `await` both the candidate
+  factory and `compute()` uniformly for every candidate — a no-op for the
+  synchronous ones — and a new async-capable `src/timeIt.js` replaces
+  `node/scripts/benchmark.js`'s synchronous-only `timeIt` for this axis,
+  since the latter can't correctly time a Promise-returning `fn` (it never
+  awaits it). Left `node/scripts/benchmark.js` itself untouched — the
+  compute axis is the only consumer that needed this.
+
+Cold-start isolation (this issue's core ask): `require("sharp-phash")`
+only loads cheaply, but libvips' worker-thread pool initialises lazily on
+its *first real image operation*, not on `require()`. Measured directly on
+this machine: a first hash call took ~7.0ms vs. ~1.3ms steady-state
+(without any warm-up, a first "steady-state" call measured 5.395ms vs.
+~1.3-1.7ms for the following four) — a real, reproducible first-call tax
+that would otherwise land inside the 64x64 row's mean/max rather than cold
+start. `createCandidate()` is itself `async` and absorbs this with one
+throwaway hash call on a minimal 1x1 image before returning; the shipped
+run's numbers confirm it worked — sharp-phash's cold start is 52.092ms
+(require + libvips first-use init) and its 64x64 steady-state row (mean
+1.362ms, min 1.237ms, max 1.555ms) shows no first-call spike.
+
+Actual hash bit-length: 64-bit (a 64-character `'0'`/`'1'` string, from its
+own fixed 8x8 DCT-coefficient grid) — matches img-guard's and
+`@stabilityprotocol.com/phash`'s, confirmed from the real output rather
+than assumed.
+
+Sample numbers (20 runs, this machine,
+`benchmarks/results/compute-axis-2026-08-27T11-05-20-959Z.md`): cold start
+52.092ms; 64x64 mean 1.362ms; 512x512 mean 2.331ms; 2048x2048 mean
+18.443ms; 4096x4096 mean 64.553ms — faster than img-guard's WASM candidate
+at every size above 64x64, and faster than `@stabilityprotocol.com/phash`
+at every size, but with by far the largest cold-start cost of the three
+real candidates (native-binding init vs. pure-JS `require()`) — itself a
+relevant data point for Radu's WASM-vs-`napi-rs` question (ADR 0002): a
+native binding's one-time load cost can dominate a single-image request
+even though its steady-state per-call cost is competitive.

@@ -20,6 +20,7 @@
   },
   "dependencies": {
     "@stabilityprotocol.com/phash": "^1.0.0",
-    "bktree-fast": "^0.0.7"
+    "bktree-fast": "^0.0.7",
+    "sharp-phash": "^2.2.0"
   }
 }
