@@ -38,3 +38,25 @@ This is itself a relevant data point for Radu's WASM-vs-`napi-rs` question
 changes in a way img-guard's WASM boundary structurally can't. `phash` is a
 concrete example of that risk having already materialized, twelve years
 after publication.
+
+## `@stabilityprotocol.com/phash` — wired in as a compute-axis candidate (issue #15)
+
+Pure TypeScript/JS, zero dependencies, ships both CJS and ESM builds —
+installs and runs on current Node with no build step. Its default 64-bit
+hash (`hashSize: 8`, the library's default) happens to match img-guard's,
+so issue #12's bit-length-parity Further Note resolves as "no divergence"
+for this candidate — confirmed from the actual output, not assumed.
+
+One integration wrinkle worth recording: unlike img-guard's WASM `phash`
+(which decodes an encoded image file itself) and the excluded `phash`
+package (which also took encoded bytes), this library's hashing functions
+(`fromRgba`/`fromImageData`) only accept already-decoded RGBA pixel data
+plus width/height — it doesn't decode image files. To keep the adapter
+interface (`compute(imageBytes)`) identical across candidates, the
+candidate wrapper (`src/candidates/stabilityprotocol-phash.js`) decodes
+the harness's synthetic BMP fixture itself before calling `fromRgba` —
+decode cost stays inside the timed call, same as img-guard's WASM
+candidate, so the comparison remains apples-to-apples. That decoder only
+handles the exact BMP shape `bmpBytes()` produces (24-bit uncompressed
+BITMAPINFOHEADER, bottom-up, BGR, row-padded) — not BMP-the-format
+generally.

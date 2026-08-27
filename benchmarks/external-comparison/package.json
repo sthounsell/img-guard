@@ -19,6 +19,7 @@
     "vitest": "^4.1.11"
   },
   "dependencies": {
+    "@stabilityprotocol.com/phash": "^1.0.0",
     "bktree-fast": "^0.0.7"
   }
 }

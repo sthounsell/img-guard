@@ -2,12 +2,13 @@
 "use strict";
 
 // Compute-axis comparison harness (issue #13): img-guard's own WASM phash,
-// plus the external Node candidates future tickets add (#14-#16), all
-// timed across the same synthetic image sizes `phash_bench.rs` and
-// `node/scripts/benchmark.js` already use. Mirrors `benchmark.js`'s
-// CLI-flag pattern and reuses its `bmpBytes`/`timeIt` helpers directly
-// (rather than re-implementing them) so the two fixture generators can't
-// drift apart.
+// plus the external Node candidates (#14 `phash`, excluded — see
+// benchmarks/results/notes.md; #15 `@stabilityprotocol.com/phash`; #16
+// `sharp-phash`, pending), all timed across the same synthetic image sizes
+// `phash_bench.rs` and `node/scripts/benchmark.js` already use. Mirrors
+// `benchmark.js`'s CLI-flag pattern and reuses its `bmpBytes`/`timeIt`
+// helpers directly (rather than re-implementing them) so the two fixture
+// generators can't drift apart.
 //
 // Usage: node scripts/run-compute.js [--sizes 64,512,2048,4096] [--runs N]
 
@@ -19,6 +20,9 @@ const { writeResultsFile } = require("../src/resultsFile");
 const {
   createCandidate: createImgGuardCandidate,
 } = require("../src/candidates/img-guard");
+const {
+  createCandidate: createStabilityProtocolPhashCandidate,
+} = require("../src/candidates/stabilityprotocol-phash");
 
 function parseArgs(argv) {
   const flag = (name, fallback) => {
@@ -39,10 +43,13 @@ function formatRow(label, { mean, min, max }) {
 function run(argv) {
   const { sizes, runs } = parseArgs(argv);
 
-  // One candidate for now (issue #13 scaffolds the harness + img-guard's
-  // own baseline only); #14-#16 append phash, @stabilityprotocol.com/phash,
-  // and sharp-phash here once their adapters land.
-  const candidates = [createImgGuardCandidate];
+  // #14's `phash` was excluded (unbuildable on current Node — see
+  // benchmarks/results/notes.md); #16 appends sharp-phash here once its
+  // adapter lands.
+  const candidates = [
+    createImgGuardCandidate,
+    createStabilityProtocolPhashCandidate,
+  ];
 
   const rows = runComputeBenchmark({
     candidates,
